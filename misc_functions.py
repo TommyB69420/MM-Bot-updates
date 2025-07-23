@@ -253,6 +253,7 @@ def execute_weapon_shop_logic():
     found_weapons_in_stock = False
     available_weapons = []
 
+    # Check for stock
     try:
         table = global_vars.driver.find_element(By.TAG_NAME, "table")
         rows = table.find_elements(By.TAG_NAME, "tr")
@@ -283,6 +284,7 @@ def execute_weapon_shop_logic():
                     print(f"Warning: Could not parse stock value '{stock_str}' for item '{item_name}'. Skipping.")
                     continue
 
+                # Confirm stock level
                 if stock >= 1:
                     found_weapons_in_stock = True
                     print(f"{item_name} is in stock! Stock: {stock}")
@@ -296,7 +298,7 @@ def execute_weapon_shop_logic():
                 print(f"Skipping row due to DOM or unknown error: {e}")
                 continue
 
-        # Attempt auto-buy if applicable
+        # Attempt auto-buy if a priortised weapon is in stock
         if found_weapons_in_stock and auto_buy_enabled and priority_weapons:
             for weapon in priority_weapons:
                 if weapon in available_weapons:
@@ -306,10 +308,11 @@ def execute_weapon_shop_logic():
         if not found_weapons_in_stock:
             print("No weapons found in stock at the shop currently.")
 
+    # Unable to find the weapon shop table, meaning at max views or page structure has changed.
     except NoSuchElementException:
         print("Error: Could not find the weapon shop table on the page. Page structure might have changed.")
-        send_discord_notification("Error: Failed to locate weapon shop table. Manual check advised.")
-        global_vars._script_weapon_shop_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        send_discord_notification("Error: Failed to locate weapon shop table. At max views.")
+        global_vars._script_weapon_shop_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(15, 17))
         return False
     except Exception as e:
         print(f"An unexpected error occurred during weapon shop check: {e}")
@@ -537,7 +540,7 @@ def execute_jail_work_logic():
         else:
             print("FAILED: Couldn't open Earn (income) tab.")
     else:
-        print(f"Skipping Earn: Earn timer not ready ({global_vars.jail_timers['earn_time_remaining']:.1f} sec left)")
+        print(f"Earn timer not ready ({global_vars.jail_timers['earn_time_remaining']:.1f} sec left)")
 
     # --- GYM WORKOUT (action timer) ---
     if global_vars.jail_timers.get("action_time_remaining", 999) <= 0:
@@ -551,7 +554,7 @@ def execute_jail_work_logic():
             else:
                 print("FAILED: Couldn't click 'Gym' radio.")
     else:
-        print(f"Skipping Gym: Action timer not ready ({global_vars.jail_timers['action_time_remaining']:.1f} sec left)")
+        print(f"Action timer not ready ({global_vars.jail_timers['action_time_remaining']:.1f} sec left)")
 
 
 
