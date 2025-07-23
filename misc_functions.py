@@ -6,14 +6,12 @@ from selenium.common import NoSuchElementException, StaleElementReferenceExcepti
 from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import send_discord_notification
-from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, \
-    _get_dropdown_options, _select_dropdown_option, _find_and_send_keys
-from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, \
-    _get_last_weapon_shop_check_timestamp
+from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, _get_dropdown_options, _select_dropdown_option, _find_and_send_keys
+from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp
 from timer_functions import get_all_active_game_timers
 
 
-def execute_study_degrees_logic():
+def study_degrees():
     """
     Manages the process of studying university degrees.
     Checks a config setting to determine if a degree study should be attempted.
@@ -98,7 +96,7 @@ def execute_study_degrees_logic():
         global_vars._script_action_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(300, 600))
         return False
 
-def execute_bank_management_logic(initial_player_data):
+def clean_money_on_hand_logic(initial_player_data):
     """
     Manages clean money: deposits excess using quick deposit and withdraws desired amount from bank.
     Returns True if an action was performed, False otherwise.
@@ -109,67 +107,60 @@ def execute_bank_management_logic(initial_player_data):
     excess_money_on_hand_limit = global_vars.config.getint('Misc', 'ExcessMoneyOnHand', fallback=100000)
     desired_money_on_hand = global_vars.config.getint('Misc', 'MoneyOnHand', fallback=50000)
 
+    # --- Deposit excess money ---
     if clean_money > excess_money_on_hand_limit:
         print(f"Clean money (${clean_money:,}) is above the excess limit (${excess_money_on_hand_limit:,}). Attempting quick deposit.")
-
-        # Click the quick deposit button in the right bar
-        quick_deposit_xpath = "//div[@id='nav_right']//form[contains(., '$')]"
+        quick_deposit_xpath = "//form[@name='autodepositM']"
 
         if _find_and_click(By.XPATH, quick_deposit_xpath):
-            print(f"Successfully initiated quick deposit for excess money.")
+            print("Successfully initiated quick deposit for excess money.")
             action_performed = True
             time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
         else:
             print("Failed to click the quick deposit element.")
 
-    # Withdraw desired money if current clean money is below the desired amount
+    # Withdraw money if under target
     if clean_money < desired_money_on_hand:
-        print("Navigating to Bank to manage funds for withdrawal.")
-        if not _navigate_to_page_via_menu(
-                "//a[starts-with(@href, 'javascript:doLoadincome')]",
-                "Bank",
-                "Bank"
-        ):
-            print("Failed to navigate to the Bank page for withdrawal.")
-            return action_performed
-
-        # Re-fetch current clean money for precise withdrawal
-        current_clean_money_on_hand_text = _get_element_text(By.XPATH, "//div[@id='nav_right']//form[contains(., '$')]")
-        current_clean_money_on_hand = 0
-        if current_clean_money_on_hand_text:
-            try:
-                current_clean_money_on_hand = int(''.join(filter(str.isdigit, current_clean_money_on_hand_text)))
-                print(f"Current Clean Money (on hand): ${current_clean_money_on_hand:,}")
-            except ValueError:
-                print(f"Could not parse current clean money on hand: {current_clean_money_on_hand_text}")
-
-        # Only withdraw if actual on-hand money is still below desired
-        if current_clean_money_on_hand < desired_money_on_hand:
-            withdraw_amount = desired_money_on_hand - current_clean_money_on_hand
-            if withdraw_amount > 0:
-                print(f"Clean money on hand (${current_clean_money_on_hand:,}) is below desired amount (${desired_money_on_hand:,}). Attempting to withdraw ${withdraw_amount:,}.")
-
-                if not _find_and_click(By.XPATH, "//a[@href='bank.asp?option=withdrawal' and text()='Withdrawal']"):
-                    print("Failed to click withdrawal button.")
-                    return action_performed
-
-                if not _find_and_send_keys(By.XPATH, "//input[@name='withdrawal']", str(withdraw_amount)):
-                    print("Failed to enter withdrawal amount.")
-                    return action_performed
-
-                if not _find_and_click(By.XPATH, "//input[@type='submit' and @value='Withdraw']"):
-                    print("Failed to click withdraw submit button.")
-                    return action_performed
-
-                print(f"Successfully withdrew ${withdraw_amount:,}.")
-                action_performed = True
-                time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
-        else:
-            print("Calculated withdrawal amount is zero or negative. Skipping withdrawal.")
+        withdraw_amount = desired_money_on_hand - clean_money
+        print(f"Clean money (${clean_money:,}) is below desired amount (${desired_money_on_hand:,}). Will attempt to withdraw ${withdraw_amount:,}.")
+        if withdraw_amount > 0 and withdraw_money(withdraw_amount):
+            action_performed = True
 
     return action_performed
 
-def execute_event_logic():
+def withdraw_money(amount: int) -> bool:
+    """
+    Withdraws the specified amount of money from the bank.
+    Returns True if the withdrawal was successful, False otherwise.
+    """
+    print(f"Attempting to withdraw ${amount:,} from the bank.")
+
+    # Navigate to Bank page
+    if not _navigate_to_page_via_menu(
+        "//span[@class='income']",
+        "//a[normalize-space()='Bank']",
+        "Bank"
+    ):
+        print("Failed to navigate to the Bank page.")
+        return False
+
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='Withdrawal']"):
+        print("Failed to click withdrawal button.")
+        return False
+
+    if not _find_and_send_keys(By.XPATH, "//input[@name='withdrawal']", str(amount)):
+        print("Failed to enter withdrawal amount.")
+        return False
+
+    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+        print("Failed to click withdraw submit button.")
+        return False
+
+    print(f"Successfully withdrew ${amount:,}.")
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+    return True
+
+def do_events():
     """
     Checks for and attempts the in the game event based on settings.ini.
     Returns True if an action was performed (attacked or cooldown set), False otherwise.
@@ -219,7 +210,7 @@ def execute_event_logic():
         return False
 
 
-def execute_weapon_shop_logic():
+def check_weapon_shop():
     """
     Checks the weapons shop for stock, message discord with results,
     automatically buy top weapons if enabled in settings.ini.
@@ -374,13 +365,14 @@ def auto_buy_weapon(item_name: str):
             send_discord_notification(f"Successfully purchased {item_name} from Weapon Shop!")
         else:
             print(f"[AutoBuy] FAILED: No confirmation message found for {item_name}.")
-            send_discord_notification(f"Attempted to purchase {item_name}, but it may have failed.")
+            send_discord_notification(f"Attempted to purchase {item_name}, but failed. The item is gone, no available hands, or insufficient funds.")
 
 
-def execute_drug_store_logic():
+def check_drug_store(initial_player_data):
     """
     Checks the Drug Store for stock of Pseudoephedrine and Medipack.
-    Sends a Discord alert if any are in stock, and sets a cooldown regardless of result.
+    Withdraws money and purchases if AutoBuy is enabled.
+    Sends a Discord alert if stock is found and sets a cooldown if not.
     """
     print("\n--- Beginning Drug Store Operation ---")
 
@@ -409,34 +401,60 @@ def execute_drug_store_logic():
     print("Checking Drug Store for Pseudoephedrine and Medipack stock...")
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-    # Item stock check
+    # Extract stock and price for both items
     items_to_check = {
-        "Pseudoephedrine": "//label[normalize-space()='Pseudoephedrine']/ancestor::tr/td[4]",
-        "Medipack": "//td[normalize-space()='Medipack']/parent::tr/td[4]"
+        "Pseudoephedrine": "//label[normalize-space()='Pseudoephedrine']/ancestor::tr",
+        "Medipack": "//td[normalize-space()='Medipack']/parent::tr"
     }
 
+    item_data = {}
     found_stock = False
-    for name, xpath in items_to_check.items():
-        element = _find_element(By.XPATH, xpath)
-        if not element:
-            print(f"{name} not found on the page.")
+
+    for name, row_xpath in items_to_check.items():
+        row_element = _find_element(By.XPATH, row_xpath)
+        if not row_element:
+            print(f"{name} row not found on the page.")
             continue
 
-        stock_text = element.text.strip()
+        td_elements = row_element.find_elements(By.TAG_NAME, "td")
+        if len(td_elements) < 4:
+            print(f"Not enough columns in row for {name}.")
+            continue
+
+        price_str = td_elements[2].text.strip().replace("$", "").replace(",", "")
+        stock_str = td_elements[3].text.strip()
+
         try:
-            stock = int(stock_text)
+            price = int(price_str)
+            stock = int(stock_str)
+            item_data[name] = {"price": price, "stock": stock}
+
             if stock > 0:
                 print(f"DRUG STORE ALERT: {name} is in stock! Stock: {stock}")
                 if notify_stock:
                     send_discord_notification(f"{name} is in stock! Stock: {stock}")
                 found_stock = True
-
-                if name == "Pseudoephedrine":
-                    auto_buy_drug_store_item("Pseudoephedrine")
             else:
                 print(f"{name} is out of stock.")
         except ValueError:
-            print(f"Warning: Could not parse stock value '{stock_text}' for {name}.")
+            print(f"Warning: Could not parse price or stock for {name}. Raw values: price='{price_str}', stock='{stock_str}'")
+
+    # Attempt to buy, prioritising Medipack over Pseudoephedrine
+    for name in ["Medipack", "Pseudoephedrine"]:
+        data = item_data.get(name)
+        if not data or data["stock"] <= 0:
+            continue
+
+        clean_money = initial_player_data.get("Clean Money", 0)
+        price = data["price"]
+
+        if clean_money < price:
+            amount_needed = price - clean_money
+            print(f"Not enough clean money to buy {name}. Withdrawing ${amount_needed:,}.")
+            withdraw_money(amount_needed)
+            clean_money += amount_needed  # Update for next item check
+
+        auto_buy_drug_store_item(name)
 
     if not found_stock:
         print("No stock found for Pseudoephedrine or Medipack.")
@@ -446,6 +464,7 @@ def execute_drug_store_logic():
 
     print(f"Drug Store check complete.")
     return True
+
 
 
 def auto_buy_drug_store_item(item_name: str):
@@ -492,9 +511,10 @@ def auto_buy_drug_store_item(item_name: str):
         global_vars._script_drug_store_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=30)
         print(f"[AutoBuy] Drug Store cooldown set until {global_vars._script_drug_store_cooldown_end_time}")
     else:
-        print(f"[AutoBuy] WARNING: No success message found after purchasing {item_name}. Not sending Discord ping.")
+        print(f"[AutoBuy] WARNING: No success message found after purchasing {item_name}.")
+        send_discord_notification(f"Failed to purchase {item_name} from Drug Store. The item is gone, or insufficient funds.")
 
-def execute_jail_work_logic():
+def jail_work():
     """
     Executes jail earn jobs and gym workout, obeying earn/action timers.
     Picks the last available job (except 'makeshank', unless enabled in settings.ini).

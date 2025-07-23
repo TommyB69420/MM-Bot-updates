@@ -15,8 +15,7 @@ from helper_functions import _get_element_text, _find_and_send_keys, _find_and_c
 from database_functions import init_local_db
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
-from misc_functions import execute_study_degrees_logic, execute_bank_management_logic, execute_event_logic, \
-    execute_weapon_shop_logic, execute_drug_store_logic, execute_jail_work_logic
+from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, clean_money_on_hand_logic
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -309,7 +308,7 @@ while True:
 
         while is_player_in_jail():
             global_vars.jail_timers = get_all_active_game_timers()
-            execute_jail_work_logic()
+            jail_work()
             time.sleep(2)  # Tighter loop for responsiveness
 
         print("Player released from jail. Resuming normal script.")
@@ -424,7 +423,7 @@ while True:
     # Study Degrees Logic
     if enabled_configs['do_university_degrees_enabled'] and action_time_remaining <=0:
         print(f"Study Degree timer ({action_time_remaining:.2f}s) is ready. Attempting Study Degree.")
-        if execute_study_degrees_logic():
+        if study_degrees():
             action_performed_in_cycle = True
         else:
             print("Study Degree logic did not perform an action or failed. Setting fallback cooldown.")
@@ -487,7 +486,7 @@ while True:
         continue
 
     # Deposit and withdraw excess money logic
-    if execute_bank_management_logic(initial_player_data):
+    if clean_money_on_hand_logic(initial_player_data):
         action_performed_in_cycle = True
     else:
         print("Checking clean money on hand - Amount is within limits.")
@@ -498,7 +497,7 @@ while True:
     # Do event logic
     if enabled_configs['do_event_enabled'] and event_time_remaining <= 0:
         print(f"Event timer ({event_time_remaining:.2f}s) is ready. Attempting the event.")
-        if execute_event_logic():
+        if do_events():
             action_performed_in_cycle = True
         else:
             print("Event logic did not perform an action or failed.")
@@ -509,7 +508,7 @@ while True:
     # Do Weapon Shop Logic
     if enabled_configs['do_weapon_shop_check_enabled'] and check_weapon_shop_time_remaining <= 0:
         print(f"Weapon Shop timer ({check_weapon_shop_time_remaining:.2f}s) is ready. Attempting check now.")
-        if execute_weapon_shop_logic():
+        if check_weapon_shop():
             action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
@@ -518,7 +517,7 @@ while True:
     # Do Drug Store check Logic
     if enabled_configs['do_drug_store_enabled'] and check_drug_store_time_remaining <= 0:
         print(f"Drug Store timer ({check_drug_store_time_remaining:.2f}s) is ready. Attempting to check Drug Store.")
-        if execute_drug_store_logic():
+        if check_drug_store(initial_player_data):
             action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
