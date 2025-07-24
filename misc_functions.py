@@ -209,10 +209,10 @@ def do_events():
         global_vars._script_event_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(5, 7))
         return False
 
-
-def check_weapon_shop():
+def check_weapon_shop(initial_player_data):
     """
     Checks the weapons shop for stock, message discord with results,
+    Withdraws money if required
     automatically buy top weapons if enabled in settings.ini.
     """
     print("\n--- Beginning Weapon Shop Operation ---")
@@ -242,7 +242,7 @@ def check_weapon_shop():
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
     found_weapons_in_stock = False
-    available_weapons = []
+    weapon_data = {}
 
     # Check for stock
     try:
@@ -270,6 +270,8 @@ def check_weapon_shop():
 
                 stock_str = td_elements[3].text.strip()
                 try:
+                    price_str = td_elements[2].text.strip().replace("$", "").replace(",", "")
+                    price = int(price_str)
                     stock = int(stock_str)
                 except ValueError:
                     print(f"Warning: Could not parse stock value '{stock_str}' for item '{item_name}'. Skipping.")
@@ -281,7 +283,7 @@ def check_weapon_shop():
                     print(f"{item_name} is in stock! Stock: {stock}")
                     if notify_stock and item_name in priority_weapons:
                         send_discord_notification(f"{item_name} is in stock! Stock: {stock}")
-                    available_weapons.append(item_name)
+                    weapon_data[item_name] = {"stock": stock, "price": price}
                 else:
                     print(f"Item: {item_name}, Stock: {stock} (out of stock)")
 
@@ -292,9 +294,21 @@ def check_weapon_shop():
         # Attempt auto-buy if a priortised weapon is in stock
         if found_weapons_in_stock and auto_buy_enabled and priority_weapons:
             for weapon in priority_weapons:
-                if weapon in available_weapons:
-                    auto_buy_weapon(weapon)
-                    break
+                data = weapon_data.get(weapon)
+                if not data or data["stock"] <= 0:
+                    continue
+
+                price = data["price"]
+                clean_money = initial_player_data.get("Clean Money", 0)
+
+                if clean_money < price:
+                    amount_needed = price - clean_money
+                    print(f"Not enough clean money to buy {weapon}. Withdrawing ${amount_needed:,}.")
+                    withdraw_money(amount_needed)
+                    clean_money += amount_needed
+
+                auto_buy_weapon(weapon)
+                break # Remove this break to buy all weapons in the priority list if multiple is in stock.
 
         if not found_weapons_in_stock:
             print("No weapons found in stock at the shop currently.")
@@ -464,8 +478,6 @@ def check_drug_store(initial_player_data):
 
     print(f"Drug Store check complete.")
     return True
-
-
 
 def auto_buy_drug_store_item(item_name: str):
     """

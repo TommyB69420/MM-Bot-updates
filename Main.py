@@ -508,7 +508,7 @@ while True:
     # Do Weapon Shop Logic
     if enabled_configs['do_weapon_shop_check_enabled'] and check_weapon_shop_time_remaining <= 0:
         print(f"Weapon Shop timer ({check_weapon_shop_time_remaining:.2f}s) is ready. Attempting check now.")
-        if check_weapon_shop():
+        if check_weapon_shop(initial_player_data):
             action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
