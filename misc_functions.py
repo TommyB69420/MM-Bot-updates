@@ -281,7 +281,7 @@ def check_weapon_shop(initial_player_data):
                     found_weapons_in_stock = True
                     print(f"{item_name} is in stock! Stock: {stock}")
                     if notify_stock and item_name in priority_weapons:
-                        send_discord_notification(f"{item_name} is in stock! Stock: {stock}")
+                        send_discord_notification("@here " f"{item_name} is in stock! Stock: {stock}")
                     weapon_data[item_name] = {"stock": stock, "price": price}
                 else:
                     print(f"Item: {item_name}, Stock: {stock} (out of stock)")
@@ -298,13 +298,20 @@ def check_weapon_shop(initial_player_data):
                     continue
 
                 price = data["price"]
-                clean_money = initial_player_data.get("Clean Money", 0)
+                clean_money_text = _get_element_text(By.XPATH, "//div[@id='nav_right']//form[contains(., '$')]")
+                clean_money = int(''.join(filter(lambda c: c.isdigit(), clean_money_text))) if clean_money_text else 0
 
                 if clean_money < price:
                     amount_needed = price - clean_money
                     print(f"Not enough clean money to buy {weapon}. Withdrawing ${amount_needed:,}.")
-                    withdraw_money(amount_needed)
-                    clean_money += amount_needed
+                    if withdraw_money(amount_needed):
+                        # Navigate back to Weapon Shop after withdrawal
+                        _navigate_to_page_via_menu(
+                            "//span[@class='city']",
+                            "//p[@class='weapon_shop']",
+                            "Weapon Shop"
+                        )
+                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
                 auto_buy_weapon(weapon)
                 break # Remove this break to buy all weapons in the priority list if multiple is in stock.
@@ -452,20 +459,27 @@ def check_drug_store(initial_player_data):
         except ValueError:
             print(f"Warning: Could not parse price or stock for {name}. Raw values: price='{price_str}', stock='{stock_str}'")
 
-    # Attempt to buy, prioritising Medipack over Pseudoephedrine
+    # Attempt to buy, priortising Medipack over Pseudoephedrine
     for name in ["Medipack", "Pseudoephedrine"]:
         data = item_data.get(name)
         if not data or data["stock"] <= 0:
             continue
 
-        clean_money = initial_player_data.get("Clean Money", 0)
+        clean_money_text = _get_element_text(By.XPATH, "//div[@id='nav_right']//form[contains(., '$')]")
+        clean_money = int(''.join(filter(lambda c: c.isdigit(), clean_money_text))) if clean_money_text else 0
         price = data["price"]
 
         if clean_money < price:
             amount_needed = price - clean_money
             print(f"Not enough clean money to buy {name}. Withdrawing ${amount_needed:,}.")
-            withdraw_money(amount_needed)
-            clean_money += amount_needed  # Update for next item check
+            if withdraw_money(amount_needed):
+                # Navigate back to Drug Store after withdrawal
+                _navigate_to_page_via_menu(
+                    "//span[@class='city']",
+                    "//a[@class='business drug_store']",
+                    "Drug Store"
+                )
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
         auto_buy_drug_store_item(name)
 
