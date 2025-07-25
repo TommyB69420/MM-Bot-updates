@@ -4,7 +4,8 @@ import re
 import requests
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
-from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text
+from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text, \
+    _navigate_to_page_via_menu, _select_dropdown_option
 import global_vars
 
 def send_discord_notification(message):
@@ -334,8 +335,11 @@ def process_unread_journal_entries(player_data):
                             label_element
                         )
                         entry_content = entry_content.strip()
-
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
+
+                        # Check for nausea journal entry
+                        if "you have a slightly nauseous feeling in your" in entry_content.lower():
+                            check_into_hospital_for_surgery()
 
                         combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
 
@@ -411,3 +415,35 @@ def accept_lawyer_rep(entry_content):
                 print("FAILED to click ACCEPT for lawyer representation.")
     except Exception as e:
         print(f"Exception during lawyer rep acceptance attempt: {e}")
+
+
+def check_into_hospital_for_surgery():
+    """
+    Navigates to the hospital and applies for surgery if possible.
+    """
+    print("Trigger: Attempting to check into hospital for surgery...")
+
+    if not _navigate_to_page_via_menu(
+            "//span[@class='city']",
+            "//a[@class='business hospital']",
+            "Hospital"
+    ):
+        print("FAILED: Could not navigate to Hospital.")
+        return False
+
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='APPLY FOR SURGERY']", pause=global_vars.ACTION_PAUSE_SECONDS):
+        print("FAILED: Could not click 'APPLY FOR SURGERY'.")
+        return False
+
+    if not _select_dropdown_option(By.XPATH, "//select[@name='display']", "Yes"):
+        print("FAILED: Could not select 'Yes' from dropdown.")
+        return False
+
+    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+        print("FAILED: Could not submit surgery application.")
+        return False
+
+    print("SUCCESS: Surgery application submitted.")
+    send_discord_notification("Applied for surgery at hospital due to nauseous feeling.")
+    return True
+

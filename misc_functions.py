@@ -212,8 +212,7 @@ def do_events():
 def check_weapon_shop(initial_player_data):
     """
     Checks the weapons shop for stock, message discord with results,
-    Withdraws money if required
-    automatically buy top weapons if enabled in settings.ini.
+    Withdraws money if required and automatically buy top weapons if enabled in settings.ini.
     """
     print("\n--- Beginning Weapon Shop Operation ---")
     initial_url = global_vars.driver.current_url

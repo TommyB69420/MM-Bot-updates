@@ -698,7 +698,7 @@ def _perform_torch_attempt(player_data):
         print(f"FAILED: Could not select business '{selected_business_name}' in dropdown: {e}")
         return False
 
-    commit_crime_button_xpath = "/html/body/div[4]/div[4]/div[2]/div[2]/form/p[3]/input"
+    commit_crime_button_xpath = "//input[@name='B1']"
     if not _find_and_click(By.XPATH, commit_crime_button_xpath, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
         print("FAILED: Could not click final 'Commit Crime' button for Torch.")
         return False
@@ -714,11 +714,12 @@ def _perform_torch_attempt(player_data):
         try:
             print(f"DEBUG: Torch success result_text: {result_text}")
 
-            business_name_re_match = re.search(r'managed to set ablaze (.+?)(?: for \$|\.|$)', result_text)
+            business_name_re_match = re.search(r'managed to set ablaze the (.+?)!', result_text)
             torched_business_name = selected_business_name
             if business_name_re_match:
                 extracted_name = business_name_re_match.group(1).strip()
-                torched_business_name = extracted_name.rstrip('.,!').strip()
+                torched_business_name = f"{player_data.get('Location', '')} {extracted_name}".strip()
+                torched_business_name = torched_business_name.lower()
             else:
                 print(
                     f"DEBUG: Could not parse torched business name from success message. Using selected_business_name: {selected_business_name}")
@@ -741,9 +742,9 @@ def _perform_torch_attempt(player_data):
                 print(f"Torch - Repaying ${extracted_cost} to {torched_business_name}.")
                 _get_business_owner_and_repay(torched_business_name, extracted_cost, player_data)
                 time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
-                print(f"Torch repayment for {torched_business_name} queued/simulated.")
+                print(f"Torch repayment for {torched_business_name} queued.")
             else:
-                print(f"Torch successful, but repayment is turned OFF or cost is 0. Skipping repayment.")
+                print(f"Torch successful, but repayment is turned OFF. Skipping repayment.")
             return True
 
         except Exception as e:
