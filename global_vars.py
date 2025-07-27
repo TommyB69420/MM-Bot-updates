@@ -1,6 +1,8 @@
 import datetime
 import random
 import os
+import shutil
+import requests
 import configparser
 import subprocess
 import time
@@ -20,37 +22,68 @@ except Exception as e:
 
 # --- Connect to Chrome Window ---
 chrome_path = config.get('Auth', 'ChromePath', fallback=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
-user_data_dir = r"C:\tmp\chrome-profile"
-os.makedirs(user_data_dir, exist_ok=True)  # Ensure the user data directory exists
+user_data_dir = r"C:\Temp\MMBotProfile"
+debug_url = "http://127.0.0.1:9222/json/version"
 
-# --- Check if Chrome is running on port 9222 ---
-chrome_debug_running = False
-try:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(1)
-    if sock.connect_ex(("127.0.0.1", 9222)) == 0:
-        chrome_debug_running = True
-        print("Chrome already running on port 9222 — reusing session.")
-    sock.close()
-except Exception as e:
-    print(f"Error checking Chrome debug port: {e}")
+# Utility: Check if Chrome debugger is already running
+def is_debugger_running():
+    try:
+        res = requests.get(debug_url, timeout=2)
+        return res.ok
+    except Exception:
+        return False
 
-# --- Launch Chrome if not running ---
-if not chrome_debug_running:
+# Utility: Check if profile folder is corrupted
+def is_profile_corrupted(path):
+    try:
+        test_file = os.path.join(path, "test.txt")
+        os.makedirs(path, exist_ok=True)
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        return False
+    except Exception:
+        return True
+
+# Handle corrupted profile recovery
+if is_profile_corrupted(user_data_dir):
+    print(f"Profile folder appears corrupted. Resetting: {user_data_dir}")
+    try:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+        os.makedirs(user_data_dir, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to reset corrupted profile: {e}")
+        exit()
+
+# Start Chrome if it's not already running
+if not is_debugger_running():
+    print("Chrome not running. Launching it...")
     try:
         subprocess.Popen([
             chrome_path,
             "--remote-debugging-port=9222",
             f"--user-data-dir={user_data_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
             "--disable-blink-features=AutomationControlled"
         ])
-        print("Launched Chrome with remote debugging...")
-        time.sleep(3)  # Give Chrome time to fully start
     except Exception as e:
         print(f"Failed to launch Chrome: {e}")
         exit()
 
-# --- Connect to the Chrome session using Selenium ---
+    # Wait until debugger is available
+    for _ in range(10):
+        if is_debugger_running():
+            print("Chrome debugger is now up.")
+            break
+        time.sleep(1)
+    else:
+        print("Chrome debugger not reachable after 10 seconds. Exiting.")
+        exit()
+else:
+    print("Chrome debugger already running. Reusing open window.")
+
+# Connect to Chrome via Selenium
 chrome_options = Options()
 chrome_options.debugger_address = "127.0.0.1:9222"
 
@@ -62,6 +95,8 @@ try:
         print("Navigated to https://mafiamatrix.net/default.asp")
     else:
         print(f"Already on MafiaMatrix: {current_url}")
+        driver.refresh()
+        time.sleep(2)
 except Exception as e:
     print(f"Failed to connect to Chrome debugger instance: {e}")
     exit()

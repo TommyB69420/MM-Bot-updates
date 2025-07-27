@@ -114,30 +114,31 @@ def read_and_send_new_messages():
                     print(f"No new message content found in conversation with {sender_name_list}.")
                     send_discord_notification(f"In-Game Message from {sender_name_list}: Could not read message content (no bodies found).")
                 else:
-                    print(f"Processing {len(message_body_elements)} messages from {sender_name_list}...")
-                    for i, body_element in enumerate(message_body_elements):
-                        try:
-                            # Use execute_script to get innerText or textContent for cleaner text
-                            actual_message = global_vars.driver.execute_script("return arguments[0].textContent || arguments[0].innerText;", body_element).strip()
-                            # Clean the message content similar to check_messages.py
-                            actual_message = actual_message.replace('\n', ' ').replace('\r', '').replace('\t', ' ')
-                            actual_message = re.sub(r'\s\s+', ' ', actual_message).strip() # Replace multiple spaces with a single
-                            actual_message = re.sub(r'[^0-9a-zA-Z:_?/ \-]', '', actual_message) # Remove special characters not in the allowlist
+                    try:
+                        print(f"Processing top message from {sender_name_list}...")
+                        top_body_element = message_body_elements[0]
+                        actual_message = global_vars.driver.execute_script(
+                            "return arguments[0].textContent || arguments[0].innerText;", top_body_element).strip()
+                        actual_message = actual_message.replace('\n', ' ').replace('\r', '').replace('\t', ' ')
+                        actual_message = re.sub(r'\s\s+', ' ', actual_message).strip()
+                        actual_message = re.sub(r'[^0-9a-zA-Z:_?/ \-]', '', actual_message)
 
-                            # Try to get a corresponding timestamp
-                            timestamp_text = "Unknown Time"
-                            if i < len(message_timestamps):
-                                try:
-                                    ts_element = message_timestamps[i]
-                                    timestamp_text = ts_element.text.strip()
-                                except Exception as ts_e:
-                                    print(f"Warning: Could not get timestamp for message {i+1} from {sender_name_list}: {ts_e}")
+                        timestamp_text = "Unknown Time"
+                        if message_timestamps:
+                            try:
+                                ts_element = message_timestamps[0]
+                                timestamp_text = ts_element.text.strip()
+                            except Exception as ts_e:
+                                print(
+                                    f"Warning: Could not get timestamp for top message from {sender_name_list}: {ts_e}")
 
-                            print(f"Read message from {sender_name_list} at {timestamp_text}): '{actual_message}'")
-                            send_discord_notification(f"In-Game Message from {sender_name_list} at {timestamp_text}: **{actual_message}**")
-                        except Exception as msg_e:
-                            print(f"Error processing individual message {i+1} from {sender_name_list}: {msg_e}")
-                            send_discord_notification(f"Script Error: Failed to read a message from {sender_name_list}.")
+                        print(f"Read message from {sender_name_list} at {timestamp_text}: '{actual_message}'")
+                        send_discord_notification(
+                            f"In-Game Message from {sender_name_list} at {timestamp_text}: **{actual_message}**")
+                    except Exception as e:
+                        print(f"Error reading top message from {sender_name_list}: {e}")
+                        send_discord_notification(
+                            f"Script Error: Failed to read top message from {sender_name_list}.")
 
                 # Go back to the message list after processing the current conversation
                 global_vars.driver.back()

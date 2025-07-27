@@ -314,6 +314,9 @@ while True:
         print("Player released from jail. Resuming normal script.")
         continue  # Skip the rest of the main loop for this cycle
 
+    global_vars.driver.refresh()
+    time.sleep(2)
+
     # Now fetch the player data
     initial_player_data = fetch_initial_player_data()
     character_name = initial_player_data.get("Character Name", "UNKNOWN")
