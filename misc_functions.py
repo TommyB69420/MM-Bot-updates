@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import send_discord_notification
 from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, _get_dropdown_options, _select_dropdown_option, _find_and_send_keys
-from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, _get_last_timestamp
+from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp
 from timer_functions import get_all_active_game_timers
 
 
@@ -575,8 +575,9 @@ def check_bionics_shop(initial_player_data):
         for row in rows:
             try:
                 radio = row.find_element(By.XPATH, ".//input[@type='radio']")
-                radio_id = radio.get_attribute("id")
+                radio_id = radio.get_attribute("value")
                 name = row.find_element(By.TAG_NAME, "label").text.strip().split("\n")[0]
+                print(f"[DEBUG] Parsed: {name} | Value: {radio.get_attribute('value')} | ID: {radio.get_attribute('id')}")
                 price = int(row.find_elements(By.TAG_NAME, "td")[2].text.strip().replace("$", "").replace(",", ""))
                 stock = int(row.find_elements(By.TAG_NAME, "td")[3].text.strip())
             except Exception as e:
@@ -647,11 +648,11 @@ def auto_buy_bionic(item_name: str, item_id: str):
         return
 
     print(f"[AutoBuy] Attempting to buy: {item_name}")
-    radio_xpath = f"//input[@id='{item_id}']"
+    radio_xpath = f"//input[@type='radio' and @value='{item_id}']"
     purchase_xpath = "//input[@name='B1']"
 
     if not _find_and_click(By.XPATH, radio_xpath):
-        print(f"[AutoBuy] Failed to select {item_name}.")
+        print(f"[AutoBuy] Failed to select {item_name}. XPath attempted: {radio_xpath}")
         return
 
     if not _find_and_click(By.XPATH, purchase_xpath):
