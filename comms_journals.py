@@ -72,13 +72,11 @@ def read_and_send_new_messages():
     print("\n--- New Messages Detected! Opening Communications ---")
     initial_url = global_vars.driver.current_url
 
-    messages_url = "https://mafiamatrix.net/communications/comms.asp"
-    print(f"Directly navigating to messages page: {messages_url}")
+    print("Navigating to Communications page via span click...")
     try:
-        global_vars.driver.get(messages_url)
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+        _find_and_click(By.XPATH, "//span[@id='comms_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS * 2)
     except Exception as e:
-        print(f"ERROR: Failed to navigate to messages page: {e}")
+        print(f"ERROR: Failed to click communications span: {e}")
         return False
 
     message_thread_processed = False
@@ -105,6 +103,19 @@ def read_and_send_new_messages():
                 sender_name_in_conversation = _get_element_text(By.XPATH, sender_xpath_in_conversation, timeout=3) or "Unknown Sender (In-Conversation)"
                 print(f"Opened conversation with {sender_name_in_conversation}.")
                 sender_name_list = sender_name_in_conversation
+
+                # If the message is from Administrator, mark all messages as read and skip
+                if sender_name_in_conversation.strip().lower() == "administrator":
+                    print("Message is from Administrator. Marking all messages as read.")
+                    try:
+                        # Go back to main Communications page
+                        _find_and_click(By.XPATH, "//span[@id='comms_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS)
+                        # Click MARK ALL READ
+                        _find_and_click(By.XPATH, "//b[normalize-space()='MARK ALL READ']",
+                                        pause=global_vars.ACTION_PAUSE_SECONDS)
+                    except Exception as admin_e:
+                        print(f"ERROR marking Administrator messages as read: {admin_e}")
+                    return message_thread_processed
 
                 # XPaths for individual messages within the opened conversation
                 message_body_elements = _find_elements(By.XPATH, "//div[@id='conversation_holder']//div[@style='padding-top:10px; color: #fff']")
@@ -145,17 +156,17 @@ def read_and_send_new_messages():
                 time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
             else:
                 print(f"FAILED: Failed to click on message thread link at index {message_thread_count}.")
-                send_discord_notification(f"Failed to open in-game message thread from {sender_name_list}.")
+                send_discord_notification(f"Failed to open in-game message thread")
 
         except Exception as e:
             print(f"Error processing message thread {message_thread_count}: {e}. Skipping to next thread.")
             # If an error occurs, try to go back to the message list page to avoid getting stuck
             try:
-                global_vars.driver.get(messages_url)
-                time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+                print("Attempting to return to Communications via span click after error...")
+                _find_and_click(By.XPATH, "//span[@id='comms_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS * 2)
             except Exception as back_e:
-                print(f"CRITICAL ERROR: Failed to navigate back to messages list after error: {back_e}")
-                break # Break out of the loop if we can't get back to a safe state
+                print(f"CRITICAL ERROR: Failed to return to Communications via span click: {back_e}")
+                break  # Break out of the loop if we can't get back to a safe state
 
         message_thread_count += 1 # Move to the next message thread in the list
 
@@ -279,10 +290,8 @@ def process_unread_journal_entries(player_data):
     print("\n--- Processing New Journal Entries ---")
     initial_url = global_vars.driver.current_url
 
-    journal_url = "https://mafiamatrix.net/journal/journal.asp"
-    print(f"Directly navigating to journal page: {journal_url}")
-    global_vars.driver.get(journal_url)
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+    print("Navigating to Journal page...")
+    _find_and_click(By.XPATH, "//span[@id='journals_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS * 2)
 
     journal_send_content_raw = global_vars.config['Journal Settings'].get('Journal_Send_To_Discord_Content', fallback='').lower()
     send_list = {item.strip() for item in journal_send_content_raw.split(',') if item.strip()}
@@ -381,10 +390,14 @@ def process_unread_journal_entries(player_data):
                 if _find_and_click(By.XPATH, requests_offers_link_xpath, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
                     if _process_requests_offers_entries():
                         processed_any_new = True
-                    global_vars.driver.get(journal_url)
-                    time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+                    try:
+                        print("Returning to Journal page via span click after Requests/Offers.")
+                        _find_and_click(By.XPATH, "//span[@id='journals_span_id']",pause=global_vars.ACTION_PAUSE_SECONDS * 2)
+                    except Exception as e:
+                        print(f"ERROR: Failed to return to Journal via span after Requests/Offers: {e}")
                 else:
                     print("FAILED: Could not click Requests/Offers link.")
+
             else:
                 print("No new Requests/Offers found (count is 0).")
         else:

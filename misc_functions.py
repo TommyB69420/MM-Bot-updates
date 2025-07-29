@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import send_discord_notification
 from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, _get_dropdown_options, _select_dropdown_option, _find_and_send_keys
-from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp
+from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, _get_last_timestamp
 from timer_functions import get_all_active_game_timers
 
 
@@ -539,6 +539,136 @@ def auto_buy_drug_store_item(item_name: str):
         print(f"[AutoBuy] WARNING: No success message found after purchasing {item_name}.")
         send_discord_notification(f"Failed to purchase {item_name} from Drug Store. The item is gone, or insufficient funds.")
 
+def check_bionics_shop(initial_player_data):
+    """
+    Checks the Bionics Shop for stock, notifies Discord if enabled,
+    and attempts auto-buy if enabled and affordable.
+    """
+    print("\n--- Beginning Bionics Shop Operation ---")
+    initial_url = global_vars.driver.current_url
+
+    # Settings
+    config = global_vars.config['Bionics Shop']
+    min_check = config.getint('MinBiosCheck', 11)
+    max_check = config.getint('MaxBiosCheck', 13)
+    notify_stock = config.getboolean('NotifyBSStock', fallback=True)
+    auto_buy_enabled = config.getboolean('DoAutoBuyBios', fallback=False)
+    priority_bionics = [b.strip() for b in config.get('AutoBuyBios', fallback='').split(',')]
+
+    # Navigation
+    if not _navigate_to_page_via_menu("//span[@class='city']",
+                                      "//a[@class='business bionics']",
+                                      "Bionics Shop"):
+        print("FAILED: Could not navigate to Bionics Shop.")
+        next_check = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        _set_last_timestamp(global_vars.BIONICS_SHOP_NEXT_CHECK_FILE, next_check)
+        return False
+
+    print("Checking Bionics Shop for available stock...")
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    found_bionics_in_stock = False
+    bionic_data = {}
+
+    try:
+        rows = global_vars.driver.find_elements(By.XPATH, "//table//tr[td/input[@type='radio']]")
+        for row in rows:
+            try:
+                radio = row.find_element(By.XPATH, ".//input[@type='radio']")
+                radio_id = radio.get_attribute("id")
+                name = row.find_element(By.TAG_NAME, "label").text.strip().split("\n")[0]
+                price = int(row.find_elements(By.TAG_NAME, "td")[2].text.strip().replace("$", "").replace(",", ""))
+                stock = int(row.find_elements(By.TAG_NAME, "td")[3].text.strip())
+            except Exception as e:
+                print(f"Skipping row due to parse error: {e}")
+                continue
+
+            if stock > 0:
+                found_bionics_in_stock = True
+                print(f"{name} is in stock! Stock: {stock}")
+                if notify_stock and name in priority_bionics:
+                    send_discord_notification(f"@here {name} is in stock! Stock: {stock}")
+                bionic_data[name] = {"stock": stock, "price": price, "id": radio_id}
+            else:
+                print(f"{name} is out of stock.")
+
+        if found_bionics_in_stock and auto_buy_enabled:
+            for bionic in priority_bionics:
+                data = bionic_data.get(bionic)
+                if not data or data["stock"] <= 0:
+                    continue
+
+                price = data["price"]
+                clean_money_text = _get_element_text(By.XPATH, "//div[@id='nav_right']//form[contains(., '$')]")
+                clean_money = int(''.join(filter(str.isdigit, clean_money_text))) if clean_money_text else 0
+
+                if clean_money < price:
+                    amount_needed = price - clean_money
+                    print(f"Not enough clean money to buy {bionic}. Withdrawing ${amount_needed:,}.")
+                    if withdraw_money(amount_needed):
+                        _navigate_to_page_via_menu("//span[@class='city']",
+                                                   "//a[@class='business bionics']",
+                                                   "Bionics Shop")
+                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+                auto_buy_bionic(bionic, data["id"])
+                break
+
+        if not found_bionics_in_stock:
+            print("No bionics found in stock.")
+
+    except Exception as e:
+        print(f"Error during Bionics Shop check: {e}")
+        send_discord_notification(f"Error: Failed during Bionics Shop check. At max views {e}")
+        next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(10, 13))
+        _set_last_timestamp(global_vars.BIONICS_SHOP_NEXT_CHECK_FILE, next_check)
+        return False
+
+    next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_check, max_check))
+    _set_last_timestamp(global_vars.BIONICS_SHOP_NEXT_CHECK_FILE, next_check)
+    print(f"Bionics Shop check complete. Next check at {next_check.strftime('%Y-%m-%d %H:%M:%S')}.")
+
+    global_vars.driver.get(initial_url)
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    return True
+
+def auto_buy_bionic(item_name: str, item_id: str):
+    """
+    Attempts to buy a bionic if it's allowed by settings.
+    """
+    config = global_vars.config['Bionics Shop']
+    if not config.getboolean('DoAutoBuyBios', fallback=False):
+        print(f"[AutoBuy] Skipping {item_name} - AutoBuy disabled.")
+        return
+
+    allowed_items = [b.strip() for b in config.get('AutoBuyBios', fallback='').split(',')]
+    if item_name not in allowed_items:
+        print(f"[AutoBuy] Skipping {item_name} - Not in allowed list.")
+        return
+
+    print(f"[AutoBuy] Attempting to buy: {item_name}")
+    radio_xpath = f"//input[@id='{item_id}']"
+    purchase_xpath = "//input[@name='B1']"
+
+    if not _find_and_click(By.XPATH, radio_xpath):
+        print(f"[AutoBuy] Failed to select {item_name}.")
+        return
+
+    if not _find_and_click(By.XPATH, purchase_xpath):
+        print(f"[AutoBuy] Failed to click purchase for {item_name}.")
+        return
+
+    send_discord_notification(f"Attempting to buy {item_name} from Bionics Shop...")
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+
+    success = _find_element(By.XPATH, "//div[@id='success']")
+    if success:
+        print(f"[AutoBuy] SUCCESS: Purchased {item_name}.")
+        send_discord_notification(f"Successfully bought {item_name} from Bionics Shop!")
+    else:
+        print(f"[AutoBuy] FAILED: No confirmation for {item_name}.")
+        send_discord_notification(f"Failed to purchase {item_name}. It might be gone, you may not have free hands, or funds were insufficient.")
+
 def jail_work():
     """
     Executes jail earn jobs and gym workout, obeying earn/action timers.
@@ -559,11 +689,12 @@ def jail_work():
                 # Find all duties radio buttons
                 all_jobs = global_vars.driver.find_elements(By.XPATH, "//input[@type='radio' and @name='job']")
 
-                # Filter the duties into a list, excluding makeshank and digtunnel unless enabled
+                # Filter the duties into a list, excluding makeshank and dig tunnel unless enabled. Jailappeal will always be off
                 valid_jobs = [
                     job for job in all_jobs
-                    if (job.get_attribute("id") != "makeshank" or make_shank) and
-                       (job.get_attribute("id") != "digtunnel" or dig_tunnel)
+                    if job.get_attribute("id") not in {"makeshank", "digtunnel", "jailappeal"}
+                       or (job.get_attribute("id") == "makeshank" and make_shank)
+                       or (job.get_attribute("id") == "digtunnel" and dig_tunnel)
                 ]
 
                 if valid_jobs:
@@ -600,6 +731,81 @@ def jail_work():
                 print("FAILED: Couldn't click 'Gym' radio.")
     else:
         print(f"Action timer not ready ({global_vars.jail_timers['action_time_remaining']:.1f} sec left)")
+
+def gym_training():
+    """
+    Attempts to perform gym training if 12h cooldown has passed.
+    Buys membership card if required, withdraws funds if necessary.
+    Updates cooldown file on success.
+    """
+    print("\n--- Beginning Gym Training Operation ---")
+
+    now = datetime.datetime.now()
+
+    # Navigate to Gym
+    if not _navigate_to_page_via_menu(
+        "//span[@class='city']",
+        "//a[@class='business gym']",
+        "Gym"
+    ):
+        print("FAILED: Could not navigate to Gym.")
+        return False
+
+    dropdown_xpath = ".//*[@class='input']"
+    dropdown_options = _get_dropdown_options(By.XPATH, dropdown_xpath)
+
+    if not dropdown_options:
+        print("FAILED: Could not find gym dropdown options.")
+        return False
+
+    if any("membership card" in option.lower() for option in dropdown_options):
+        print("Membership required. Attempting to withdraw $10,000...")
+
+        # Withdraw money for membership
+        if not withdraw_money(10000):
+            print("FAILED: Could not withdraw money for membership.")
+            return False
+
+        # Navigate back to gym
+        if not _navigate_to_page_via_menu(
+            "//span[@class='city']",
+            "//a[@class='business gym']",
+            "Gym"
+        ):
+            print("FAILED: Could not return to Gym after withdrawal.")
+            return False
+
+        dropdown_options = _get_dropdown_options(By.XPATH, dropdown_xpath)
+        if not dropdown_options or not any("membership card" in option.lower() for option in dropdown_options):
+            print("FAILED: Gym membership option not present after returning.")
+            return False
+
+        if not _select_dropdown_option(By.XPATH, dropdown_xpath, "Purchase 1 week membership card"):
+            print("FAILED: Could not select membership option.")
+            return False
+        if not _find_and_click(By.XPATH, "//form//input[@type='submit']"):
+            print("FAILED: Could not submit membership purchase.")
+            return False
+
+        print("Successfully purchased gym membership.")
+        return True  # Stop here, training will be available next cycle
+
+    # Proceed with training
+    print("Proceeding with gym training...")
+    if not _select_dropdown_option(By.XPATH, dropdown_xpath, "Have a spa/sauna"):
+        print("FAILED: Could not select training option.")
+        return False
+    if not _find_and_click(By.XPATH, "//form//input[@type='submit']"):
+        print("FAILED: Could not submit gym training.")
+        return False
+
+    print("Gym training completed successfully.")
+    cooldown = now + datetime.timedelta(hours=12, seconds=random.randint(60, 360))
+    _set_last_timestamp(global_vars.GYM_TRAINING_FILE, cooldown)
+    print(f"Next gym training available at {cooldown.strftime('%Y-%m-%d %H:%M:%S')}")
+    return True
+
+
 
 
 

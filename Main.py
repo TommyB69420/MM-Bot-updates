@@ -15,7 +15,8 @@ from helper_functions import _get_element_text, _find_and_send_keys, _find_and_c
 from database_functions import init_local_db
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
-from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, clean_money_on_hand_logic
+from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
+    clean_money_on_hand_logic, gym_training, check_bionics_shop
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -120,6 +121,8 @@ def get_enabled_configs(location):
     "do_weapon_shop_check_enabled": config.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False),
+    "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any ("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location)
 }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data):
@@ -147,6 +150,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
     fps = get_timer('funeral_parlour_scan_time_remaining')
     weapon = get_timer('check_weapon_shop_time_remaining')
     drug = get_timer('check_drug_store_time_remaining')
+    gym = get_timer('gym_trains_time_remaining')
+    bionics = get_timer('check_bionics_store_time_remaining')
 
     cfg = global_vars.config
     businesses = global_vars.private_businesses
@@ -208,6 +213,10 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Check Weapon Shop', weapon))
     if cfg.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in b for c, b in businesses.items() if c == location):
         active.append(('Check Drug Store', drug))
+    if cfg.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in b for c, b in businesses.items() if c == location):
+        active.append(('Gym Trains', gym))
+    if cfg.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in b for c, b in businesses.items() if c == location):
+        active.append(('Check Bionics Shop', bionics))
 
     print("\n--- Timers Under Consideration for Sleep Duration ---")
     for name, timer_val in active:
@@ -217,7 +226,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
     # Sleep logic
     valid = [t for _, t in active if t is not None and t != float('inf')]
     sleep_reason = "No active timers found."
-    sleep_duration = global_vars.MIN_POLLING_INTERVAL_SECONDS
+    sleep_duration = random.randint(global_vars.MIN_POLLING_INTERVAL_LOWER, global_vars.MIN_POLLING_INTERVAL_UPPER)
 
     if valid:
         ready = [t for t in valid if t <= global_vars.ACTION_PAUSE_SECONDS]
@@ -234,8 +243,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
             else:
                 sleep_reason = "All enabled timers are infinite or already processed."
 
-    if not action_performed_in_cycle and sleep_duration > global_vars.MIN_POLLING_INTERVAL_SECONDS:
-        sleep_duration = global_vars.MIN_POLLING_INTERVAL_SECONDS
+    if not action_performed_in_cycle and sleep_duration > global_vars.MIN_POLLING_INTERVAL_UPPER:
+        sleep_duration = random.randint(global_vars.MIN_POLLING_INTERVAL_LOWER, global_vars.MIN_POLLING_INTERVAL_UPPER)
     if action_performed_in_cycle:
         sleep_duration = global_vars.ACTION_PAUSE_SECONDS
         sleep_reason = "An action was just performed in this cycle, re-evaluating soon."
@@ -364,6 +373,8 @@ while True:
 
     check_weapon_shop_time_remaining = all_timers.get('check_weapon_shop_time_remaining', float('inf'))
     check_drug_store_time_remaining = all_timers.get('check_drug_store_time_remaining', float('inf'))
+    gym_trains_time_remaining = all_timers.get('gym_trains_time_remaining', float('inf'))
+    check_bionics_store_time_remaining = all_timers.get('check_bionics_store_time_remaining', float('inf'))
 
     if perform_critical_checks(character_name):
         continue
@@ -517,10 +528,28 @@ while True:
     if perform_critical_checks(character_name):
         continue
 
-    # Do Drug Store check Logic
+    # Do Bionics Shop Logic
+    if enabled_configs['do_bionics_shop_check_enabled'] and check_bionics_store_time_remaining <= 0:
+        print(f"Bionics Shop timer ({check_bionics_store_time_remaining:.2f}s) is ready. Attempting check now.")
+        if check_bionics_shop(initial_player_data):
+            action_performed_in_cycle = True
+
+    if perform_critical_checks(character_name):
+        continue
+
+    # Do Drug Store Check Logic
     if enabled_configs['do_drug_store_enabled'] and check_drug_store_time_remaining <= 0:
         print(f"Drug Store timer ({check_drug_store_time_remaining:.2f}s) is ready. Attempting to check Drug Store.")
         if check_drug_store(initial_player_data):
+            action_performed_in_cycle = True
+
+    if perform_critical_checks(character_name):
+        continue
+
+    # Do Gym Train Logic
+    if enabled_configs['do_gym_trains_enabled'] and gym_trains_time_remaining <= 0:
+        print(f"Gym trains timer ({gym_trains_time_remaining:.2f}s) is ready. Attempting Gym trains.")
+        if gym_training():
             action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
@@ -645,13 +674,15 @@ while True:
     all_timers = get_all_active_game_timers()
 
     # --- Return to the local city page if drifted ---
-    expected_url = "https://mafiamatrix.net/localcity/local.asp"
-    if global_vars.driver.current_url != expected_url:
-        print(f"Current URL is '{global_vars.driver.current_url}', expected '{expected_url}'. Navigating back...")
-        global_vars.driver.get(expected_url)
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+    if "localcity/local.asp" not in global_vars.driver.current_url:
+        print(f"Current URL is '{global_vars.driver.current_url}', expected to include 'localcity/local.asp'. Navigating back...")
+        if _find_and_click(By.XPATH, "//span[@class='city']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        else:
+            print("FAILED: Could not click the city span to return to local city page.")
+            continue  # Restart loop to try again
 
-        if global_vars.driver.current_url != expected_url:
+        if "localcity/local.asp" not in global_vars.driver.current_url:
             print(f"Still not back on local city page. Current URL: {global_vars.driver.current_url}")
             continue  # Restart loop to reset state
 

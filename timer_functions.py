@@ -70,7 +70,9 @@ def get_all_active_game_timers():
         'torch_recheck_time_remaining': 0,
 
         'check_weapon_shop_time_remaining': 0,
-        'check_drug_store_time_remaining': 0
+        'check_drug_store_time_remaining': 0,
+        'check_bionics_store_time_remaining': 0,
+        'gym_trains_time_remaining': 0
 
     }
     current_time = datetime.datetime.now()
@@ -115,7 +117,23 @@ def get_all_active_game_timers():
         ws_time_remaining = (next_ws_check - current_time).total_seconds()
         timers['check_weapon_shop_time_remaining'] = max(0, ws_time_remaining)
     else:
-        timers['check_weapon_shop_time_remaining'] = 0.0  # No scheduled time means ready now
+        timers['check_weapon_shop_time_remaining'] = 0.0  # If never checked, check immediately
+
+    # Gym Trains Timer
+    next_gym_train = _get_last_timestamp(global_vars.GYM_TRAINING_FILE)
+    if next_gym_train:
+        gym_time_remaining = (next_gym_train - current_time).total_seconds()
+        timers['gym_trains_time_remaining'] = max(0, gym_time_remaining)
+    else:
+        timers['gym_trains_time_remaining'] = 0.0 # If never checked, check immediately
+
+    # Bionics Shop Check Timer
+    next_bios_check = _get_last_timestamp(global_vars.BIONICS_SHOP_NEXT_CHECK_FILE)
+    if next_bios_check:
+        bios_time_remaining = (next_bios_check - current_time).total_seconds()
+        timers['check_bionics_store_time_remaining'] = max(0, bios_time_remaining)
+    else:
+        timers['check_bionics_store_time_remaining'] = 0.0 # If never checked, check immediately
 
     # Aggravated Crime Cooldowns (Base + Rechecks)
     mins_between_aggs = global_vars.config.getint('Actions Settings', 'mins_between_aggs', fallback=30)
@@ -221,5 +239,15 @@ def get_all_active_game_timers():
     script_drug_store_remaining = (global_vars._script_drug_store_cooldown_end_time - current_time).total_seconds()
     if script_drug_store_remaining > 0:
         timers['check_drug_store_time_remaining'] = max(timers.get('check_drug_store_time_remaining', 0), script_drug_store_remaining)
+
+    # Gym Trains Cooldown
+    script_gym_trains_remaining = (global_vars._script_gym_train_cooldown_end_time - current_time).total_seconds()
+    if script_gym_trains_remaining > 0:
+        timers['gym_trains_time_remaining'] = max(timers.get('gym_trains_time_remaining', 0), script_gym_trains_remaining)
+
+    # Bionics Shop Cooldown
+    script_bionics_shop_remaining = (global_vars._script_bionics_shop_cooldown_end_time - current_time).total_seconds()
+    if script_bionics_shop_remaining > 0:
+        timers['check_bionics_store_time_remaining'] = max(timers.get('check_bionics_store_time_remaining', 0), script_bionics_shop_remaining)
 
     return timers

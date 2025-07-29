@@ -156,8 +156,7 @@ def _open_aggravated_crime_page(crime_type):
     Navigates to the specified aggravated crime page (Hack, Pickpocket, Armed Robbery, or Torch).
     The process is skipped if the current URL is already on the Aggrivated Crime page
     """
-    expected_url = "https://mafiamatrix.net/income/agcrime.asp"
-    if global_vars.driver.current_url != expected_url:
+    if "income/agcrime.asp" not in global_vars.driver.current_url:
         if not _navigate_to_page_via_menu(
             "//span[@class='income']",
             "//a[@href='/income/agcrime.asp'][normalize-space()='Aggravated Crimes']",

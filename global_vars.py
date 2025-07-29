@@ -105,7 +105,8 @@ except Exception as e:
 EXPLICIT_WAIT_SECONDS = random.uniform(4, 5) # This is a wait for specific elements to appear, preventing TimeoutException when elements load dynamically.
 ACTION_PAUSE_SECONDS = random.uniform(0.1, 0.4) # This is an unconditional sleep between actions, primarily for pacing and simulating human interaction.
 wait = WebDriverWait(driver, EXPLICIT_WAIT_SECONDS)
-MIN_POLLING_INTERVAL_SECONDS = 15
+MIN_POLLING_INTERVAL_LOWER = 20
+MIN_POLLING_INTERVAL_UPPER = 45
 
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'
@@ -116,6 +117,8 @@ YELLOW_PAGES_LAST_SCAN_FILE = os.path.join(COOLDOWN_DATA_DIR, 'yellow_pages_last
 AGGRAVATED_CRIME_LAST_ACTION_FILE = os.path.join(COOLDOWN_DATA_DIR, 'aggravated_crimes_last_action.txt')
 ALL_DEGREES_FILE = os.path.join(COOLDOWN_DATA_DIR, 'all_degrees.json')
 WEAPON_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "weapon_shop_next_check.txt")
+GYM_TRAINING_FILE = os.path.join("game_data", "gym_timer.txt")
+BIONICS_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "bionics_shop_next_check.txt")
 
 # Define keys for database (aggravated_crime_cooldowns.json) entries
 MINOR_CRIME_COOLDOWN_KEY = 'minor_crime_cooldown'
@@ -135,6 +138,8 @@ _script_bank_add_clients_cooldown_end_time = datetime.datetime.now()
 _script_armed_robbery_recheck_cooldown_end_time = datetime.datetime.now()
 _script_torch_recheck_cooldown_end_time = datetime.datetime.now()
 # Misc timers
+_script_gym_train_cooldown_end_time = datetime.datetime.now()
+_script_bionics_shop_cooldown_end_time = datetime.datetime.now()
 _script_weapon_shop_cooldown_end_time = datetime.datetime.now()
 _script_drug_store_cooldown_end_time = datetime.datetime.now()
 jail_timers = {}
