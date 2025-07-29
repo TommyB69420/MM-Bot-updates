@@ -293,7 +293,12 @@ def process_unread_journal_entries(player_data):
     print("Navigating to Journal page...")
     _find_and_click(By.XPATH, "//span[@id='journals_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS * 2)
 
-    journal_send_content_raw = global_vars.config['Journal Settings'].get('Journal_Send_To_Discord_Content', fallback='').lower()
+    journal_send_content_raw = ''
+    try:
+        journal_send_content_raw = global_vars.config['Journal Settings'].get('Journal_Send_To_Discord_Content', fallback='').lower()
+    except KeyError:
+        print("WARNING: Missing [Journal Settings] section in settings.ini. No journal filters will be used.")
+
     send_list = {item.strip() for item in journal_send_content_raw.split(',') if item.strip()}
 
     journal_table_xpath = "/html/body/div[4]/div[4]/div[1]/div[2]/form[2]/table"
@@ -321,30 +326,34 @@ def process_unread_journal_entries(player_data):
                         entry_title = title_element.text.strip()
                         entry_time = time_element.text.strip()
 
-                        entry_content = global_vars.driver.execute_script(
-                            """
-                            var labelElem = arguments[0];
-                            var contentText = '';
-                            var foundTimeSpan = false;
-                            for (var i = 0; i < labelElem.childNodes.length; i++) {
-                                var node = labelElem.childNodes[i];
-                                if (node.nodeType === 1 && node.tagName.toLowerCase() === 'span' && node.className === 'time') {
-                                    foundTimeSpan = true;
-                                } else if (foundTimeSpan) {
-                                    if (node.nodeType === 3) {
-                                        contentText += node.textContent.trim();
-                                    } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'strong') { // Changed 'and' to '&&'
-                                        contentText += node.innerText.trim() + ' ';
-                                    } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'br') { // Changed 'and' to '&&'
-                                        contentText += '\\n';
+                        try:
+                            entry_content = global_vars.driver.execute_script(
+                                """
+                                var labelElem = arguments[0];
+                                var contentText = '';
+                                var foundTimeSpan = false;
+                                for (var i = 0; i < labelElem.childNodes.length; i++) {
+                                    var node = labelElem.childNodes[i];
+                                    if (node.nodeType === 1 && node.tagName.toLowerCase() === 'span' && node.className === 'time') {
+                                        foundTimeSpan = true;
+                                    } else if (foundTimeSpan) {
+                                        if (node.nodeType === 3) {
+                                            contentText += node.textContent.trim();
+                                        } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'strong') {
+                                            contentText += node.innerText.trim() + ' ';
+                                        } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'br') {
+                                            contentText += '\\n';
+                                        }
                                     }
                                 }
-                            }
-                            return contentText.trim().replace(/\\s\\s+/g, ' ');
-                            """,
-                            label_element
-                        )
-                        entry_content = entry_content.strip()
+                                return contentText.trim().replace(/\\s\\s+/g, ' ');
+                                """,
+                                label_element
+                            ).strip()
+                        except Exception as js_e:
+                            print(f"JS extraction failed, using fallback for journal content: {js_e}")
+                            entry_content = label_element.text.strip()
+
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
 
                         # Check for nausea journal entry
