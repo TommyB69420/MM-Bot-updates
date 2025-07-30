@@ -1,0 +1,11 @@
+# Local config and data (do not commit these)
+settings.ini
+game_data/
+
+# Python junk
+*.pyc
+__pycache__/
+
+# Logs and DBs
+*.log
+*.db
