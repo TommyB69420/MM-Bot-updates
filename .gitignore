@@ -1,11 +1,11 @@
-# Local config and data (do not commit these)
+# Ignore config and local data
 settings.ini
 game_data/
 
-# Python junk
-*.pyc
+# Python cache and compiled files
 __pycache__/
+*.pyc
 
-# Logs and DBs
+# Logs and databases
 *.log
 *.db
