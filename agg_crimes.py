@@ -445,7 +445,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal):
     now = datetime.datetime.now()
 
     if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
-        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
+        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
         return 'cooldown_target', target_player_name, None
 
     if "The name you typed in doesn't exist!" in result_text:
@@ -453,14 +453,9 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal):
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
         return 'non_existent_target', target_player_name, None
 
-    if "The victim must be in the same city as you!" in result_text:
-        print(f"INFO: Target '{target_player_name}' is not in the same city.")
-        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
-        return 'wrong_city', target_player_name, None
-
     if "no money in their account" in result_text:
         print(f"INFO: Target '{target_player_name}' has no money.")
-        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=24))
+        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1))
         return 'no_money', target_player_name, None
 
     if f"You managed to {crime_type.lower()}" in result_text and "bank account" in result_text and "You transferred $" in result_text:

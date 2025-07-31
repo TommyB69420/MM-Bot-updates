@@ -208,6 +208,13 @@ def execute_launder_logic(player_data):
         return False
 
     max_launder_amount_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div[2]/form[1]/p[1]/font")
+    if not max_launder_amount_text:
+        print("ERROR: Max launder amount text not found on this contact's page. Skipping laundering attempt.")
+        global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    max_launder_match = re.search(r'\$(\d[\d,]*)\s*max', max_launder_amount_text)
+    max_launder_amount = 0
 
     max_launder_match = re.search(r'\$(\d[\d,]*)\s*max', max_launder_amount_text)
     max_launder_amount = 0
