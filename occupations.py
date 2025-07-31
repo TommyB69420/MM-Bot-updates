@@ -215,9 +215,6 @@ def execute_launder_logic(player_data):
 
     max_launder_match = re.search(r'\$(\d[\d,]*)\s*max', max_launder_amount_text)
     max_launder_amount = 0
-
-    max_launder_match = re.search(r'\$(\d[\d,]*)\s*max', max_launder_amount_text)
-    max_launder_amount = 0
     if max_launder_match:
         max_launder_amount = int(max_launder_match.group(1).replace(',', ''))
         print(f"Max launderable amount from contact: ${max_launder_amount}")
