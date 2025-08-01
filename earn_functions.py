@@ -67,7 +67,7 @@ def execute_earns_logic():
     # Dictionary of earns by category
     earn_priority = {
         "Law": ['Parole sitting', 'Judge', 'Lawyer', 'Legal Secretary'],
-        "Secrets": ['Whore', 'Joyride', 'Streetfight', 'Pimp'],
+        "Secrets": ['Whore', 'Joyride', 'Streetfight', 'Pimp', 'Newspaper Editor'],
         "Fire": ['Fire Chief', 'Fire Fighter', 'Volunteer Firefighter'],
         "Gangster": ['Scamming', 'Hack bank account', 'Compete at illegal drags', 'Steal cheques', 'Shoplift'],
         "Engineering": ['Chief Engineer at local Construction Company', 'Engineer at local Construction Site', 'Technician at local vehicle yard', 'Mechanic at local vehicle yard'],
