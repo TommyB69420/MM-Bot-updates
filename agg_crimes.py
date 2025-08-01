@@ -9,6 +9,7 @@ from selenium.webdriver.support.select import Select
 from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, remove_player_cooldown
 import global_vars
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, _find_element
+from misc_functions import transfer_money
 from timer_functions import parse_game_datetime
 from comms_journals import send_discord_notification
 
@@ -455,7 +456,6 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal):
 
     if "no money in their account" in result_text:
         print(f"INFO: Target '{target_player_name}' has no money. Sending $1 and retrying once...")
-        from helper_functions import transfer_money
         if transfer_money(1, target_player_name):
             print("Transfer successful. Retrying hack on same target using configured amount...")
             if not _find_and_send_keys(By.XPATH, "//input[@name='hack']", target_player_name):
@@ -972,14 +972,20 @@ def execute_aggravated_crime_logic(player_data):
             print("Torch: No eligible targets with asterisk found. Skipping general cooldown for now.")
             return False
 
-    if crime_attempt_initiated:
+    # --- Final cooldown handling ---
+    short_retry_set = (global_vars._script_aggravated_crime_recheck_cooldown_end_time and global_vars._script_aggravated_crime_recheck_cooldown_end_time > datetime.datetime.now())
+
+    if crime_attempt_initiated and not short_retry_set:
         _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, datetime.datetime.now())
         print(f"Finished {crime_type} attempts for this cycle. Aggravated Crime cooldown set.")
         return True
-    else:
+    elif not short_retry_set:
         retry_minutes = random.randint(3, 5)
         global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=retry_minutes)
         print(f"Finished {crime_type} attempts for this cycle. No crime attempt initiated. Will retry in {retry_minutes} minutes.")
+        return False
+    else:
+        print(f"Short retry cooldown already set for {crime_type}. Skipping long cooldown.")
         return False
 
 def _perform_mugging_attempt(target_player_name, min_steal, max_steal):

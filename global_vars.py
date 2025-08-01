@@ -137,6 +137,7 @@ _script_bank_add_clients_cooldown_end_time = datetime.datetime.now()
 # Aggravated crime timers
 _script_armed_robbery_recheck_cooldown_end_time = datetime.datetime.now()
 _script_torch_recheck_cooldown_end_time = datetime.datetime.now()
+_script_aggravated_crime_recheck_cooldown_end_time = None
 # Misc timers
 _script_gym_train_cooldown_end_time = datetime.datetime.now()
 _script_bionics_shop_cooldown_end_time = datetime.datetime.now()

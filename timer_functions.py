@@ -149,8 +149,12 @@ def get_all_active_game_timers():
 
     # The crime isn't truly ready unless ALL relevant timers are zero. This combines the base cooldown with any specific recheck cooldowns
     effective_agg_ready_time = max(base_agg_time_remaining, torch_recheck_remaining, armed_robbery_recheck_remaining)
-
     timers['aggravated_crime_time_remaining'] = effective_agg_ready_time
+    if global_vars._script_aggravated_crime_recheck_cooldown_end_time:
+        short_retry_remaining = (global_vars._script_aggravated_crime_recheck_cooldown_end_time - current_time).total_seconds()
+        if short_retry_remaining > 0:
+            timers['aggravated_crime_time_remaining'] = max(timers['aggravated_crime_time_remaining'], short_retry_remaining)
+
     # Assign recheck timers directly, as they are derived from script-managed end times
     timers['torch_recheck_time_remaining'] = torch_recheck_remaining
     timers['armed_robbery_recheck_time_remaining'] = armed_robbery_recheck_remaining
