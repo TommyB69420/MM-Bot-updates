@@ -8,7 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
 from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, remove_player_cooldown
 import global_vars
-from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, _find_element, regex_match_between
+from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, _find_element
 from timer_functions import parse_game_datetime
 from comms_journals import send_discord_notification
 
@@ -378,7 +378,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
     now = datetime.datetime.now()
 
     if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
         return 'cooldown_target', target_player_name, None
 
     if "must be online" in result_text:
@@ -801,16 +801,14 @@ def execute_aggravated_crime_logic(player_data):
         'Torch': do_torch
     }.items() if enabled_status]
 
-    if len(enabled_crimes) > 1:
-        print(f"WARNING: Multiple aggravated crime types enabled: {', '.join(enabled_crimes)}. Please enable only one.")
-        return False
     if not enabled_crimes:
         return False
 
-    crime_type = enabled_crimes[0]
-    crime_attempt_initiated = False
-
+    # Randomly select one of the enabled crimes
+    crime_type = random.choice(enabled_crimes)
     print(f"\n--- Beginning Aggravated Crime ({crime_type}) Operation ---")
+
+    crime_attempt_initiated = False
 
     # Hacking
     if crime_type == "Hack":
