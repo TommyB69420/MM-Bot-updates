@@ -435,7 +435,7 @@ while True:
         continue
 
     # Study Degrees Logic
-    if enabled_configs['do_university_degrees_enabled'] and action_time_remaining <=0:
+    if enabled_configs['do_university_degrees_enabled'] and location == home_city and action_time_remaining <= 0:
         print(f"Study Degree timer ({action_time_remaining:.2f}s) is ready. Attempting Study Degree.")
         if study_degrees():
             action_performed_in_cycle = True
@@ -556,13 +556,12 @@ while True:
         continue
 
     # Judge Casework Logic
-    if enabled_configs['do_judge_cases_enabled']:
-        if occupation not in ["Judge", "Supreme Court Judge"] or location != home_city:
-            print(f"Skipping Judge Casework: Not a Judge or not in home city. Occupation: {occupation}, Location: {location}, Home City: {home_city}.")
-        elif case_time_remaining <= 0:
-            print(f"Judge Casework timer ({case_time_remaining:.2f}s) is ready. Attempting judge cases.")
-            if execute_judge_casework_logic(initial_player_data):
-                action_performed_in_cycle = True
+    if enabled_configs['do_judge_cases_enabled'] and occupation in ["Judge", "Supreme Court Judge"] and location == home_city and case_time_remaining <= 0:
+        print(f"Judge Casework timer ({case_time_remaining:.2f}s) is ready. Attempting judge cases.")
+        if execute_judge_casework_logic(initial_player_data):
+            action_performed_in_cycle = True
+    else:
+        print(f"Skipping Judge Casework: Conditions not met. Occupation: {occupation}, Location: {location}, Home City: {home_city}, Timer: {case_time_remaining:.2f}s")
 
     if perform_critical_checks(character_name):
         continue
