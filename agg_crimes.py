@@ -454,9 +454,22 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal):
         return 'non_existent_target', target_player_name, None
 
     if "no money in their account" in result_text:
-        print(f"INFO: Target '{target_player_name}' has no money.")
-        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1))
-        return 'no_money', target_player_name, None
+        print(f"INFO: Target '{target_player_name}' has no money. Sending $1 and retrying once...")
+        from helper_functions import transfer_money
+        if transfer_money(1, target_player_name):
+            print("Transfer successful. Retrying hack on same target using configured amount...")
+            if not _find_and_send_keys(By.XPATH, "//input[@name='hack']", target_player_name):
+                return 'general_error', target_player_name, None
+            if not _find_and_send_keys(By.XPATH, "//input[@name='cap']", str(steal_amount)):
+                return 'general_error', target_player_name, None
+            if not _find_and_click(By.XPATH, "//input[@name='B1']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+                return 'general_error', target_player_name, None
+            # Do not handle results here, just let the function continue below
+            result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]") or ""
+        else:
+            print("Failed to transfer $1, skipping retry.")
+            set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1))
+            return 'no_money', target_player_name, None
 
     if f"You managed to {crime_type.lower()}" in result_text and "bank account" in result_text and "You transferred $" in result_text:
         try:
@@ -827,6 +840,9 @@ def execute_aggravated_crime_logic(player_data):
             current_target_player = _get_suitable_crime_target(player_data['Home City'], player_data['Character Name'], tried_players_in_cycle, cooldown_key)
             if not current_target_player:
                 print(f"No more suitable {crime_type} targets found in the database for this cycle.")
+                retry_minutes = random.randint(3, 5)
+                global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=retry_minutes)
+                print(f"Will retry {crime_type} in {retry_minutes} minutes.")
                 break
 
             attempts_in_cycle += 1
@@ -865,6 +881,9 @@ def execute_aggravated_crime_logic(player_data):
             current_target_player = _get_suitable_pickpocket_target_online(player_data['Character Name'], tried_players_in_cycle)
             if not current_target_player:
                 print(f"No more suitable {crime_type} targets found in the database for this cycle.")
+                retry_minutes = random.randint(3, 5)
+                global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=retry_minutes)
+                print(f"Will retry {crime_type} in {retry_minutes} minutes.")
                 break
 
             attempts_in_cycle += 1
@@ -903,6 +922,9 @@ def execute_aggravated_crime_logic(player_data):
             current_target_player = _get_suitable_pickpocket_target_online(player_data['Character Name'], tried_players_in_cycle)
             if not current_target_player:
                 print(f"No more suitable {crime_type} targets found in the database for this cycle.")
+                retry_minutes = random.randint(3, 5)
+                global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=retry_minutes)
+                print(f"Will retry {crime_type} in {retry_minutes} minutes.")
                 break
 
             attempts_in_cycle += 1
@@ -955,7 +977,9 @@ def execute_aggravated_crime_logic(player_data):
         print(f"Finished {crime_type} attempts for this cycle. Aggravated Crime cooldown set.")
         return True
     else:
-        print(f"Finished {crime_type} attempts for this cycle. No crime attempt initiated, no specific cooldown imposed.")
+        retry_minutes = random.randint(3, 5)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=retry_minutes)
+        print(f"Finished {crime_type} attempts for this cycle. No crime attempt initiated. Will retry in {retry_minutes} minutes.")
         return False
 
 def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
