@@ -214,14 +214,13 @@ def execute_launder_logic(player_data):
         return False
 
     max_launder_match = re.search(r'\$(\d[\d,]*)\s*max', max_launder_amount_text)
-    max_launder_amount = 0
-    if max_launder_match:
-        max_launder_amount = int(max_launder_match.group(1).replace(',', ''))
-        print(f"Max launderable amount from contact: ${max_launder_amount}")
-    else:
-        print("WARNING: Could not parse max launderable amount. Defaulting to 0.")
+    if not max_launder_match:
+        print("WARNING: Could not parse max launderable amount. Skipping laundering attempt.")
         global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
         return False
+
+    max_launder_amount = int(max_launder_match.group(1).replace(',', ''))
+    print(f"Max launderable amount: ${max_launder_amount}")
 
     amount_to_launder = min(max_launder_amount, dirty_money - launder_reserve)
 

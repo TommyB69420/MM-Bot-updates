@@ -429,12 +429,12 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal):
     steal_amount = random.randint(min_steal, max_steal)
     crime_type = "Hack"
 
-    if not _find_and_send_keys(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div[2]/form/p[2]/span/input[2]", target_player_name):
+    if not _find_and_send_keys(By.XPATH, "//input[@name='hack']", target_player_name):
         return 'general_error', target_player_name, None
-    if not _find_and_send_keys(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div[2]/form/p[4]/input", str(steal_amount)):
+    if not _find_and_send_keys(By.XPATH, "//input[@name='cap']", str(steal_amount)):
         return 'general_error', target_player_name, None
 
-    if not _find_and_click(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div[2]/form/p[5]/input", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+    if not _find_and_click(By.XPATH, "//input[@name='B1']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
         return 'general_error', target_player_name, None
 
     result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]")
@@ -715,8 +715,7 @@ def _perform_torch_attempt(player_data):
                 torched_business_name = f"{player_data.get('Location', '')} {extracted_name}".strip()
                 torched_business_name = torched_business_name.lower()
             else:
-                print(
-                    f"DEBUG: Could not parse torched business name from success message. Using selected_business_name: {selected_business_name}")
+                print(f"DEBUG: Could not parse torched business name from success message. Using selected_business_name: {selected_business_name}")
                 torched_business_name = selected_business_name
 
             cost_match = re.search(r'\$(\d[\d,]*)(?:\s|\.|!)', result_text)
@@ -748,11 +747,9 @@ def _perform_torch_attempt(player_data):
             return True # An attempt was made, but parsing failed
 
     elif "recently survived" in result_text or "not yet repaired" in result_text:
-        print(
-            f"Business '{selected_business_name}' recently torched or not repaired. This will trigger a short re-check cooldown.")
+        print(f"Business '{selected_business_name}' recently torched or not repaired. This will trigger a short re-check cooldown.")
         log_aggravated_event("Torch", selected_business_name, "Target Cooldown (No Repair/Recent Torching)", 0)
-        global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(
-            minutes=random.uniform(1, 3))
+        global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(1, 3))
         global_vars.torch_successful = False
         return True
 
@@ -989,7 +986,7 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
     now = datetime.datetime.now()
 
     if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=5))
         return 'cooldown_target', target_player_name, None
 
     if "must be online" in result_text:
