@@ -356,9 +356,11 @@ def process_unread_journal_entries(player_data):
 
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
 
-                        # Check for nausea journal entry
+                        # Check for flu journal entry
                         if "you have a slightly nauseous feeling in your" in entry_content.lower():
-                            check_into_hospital_for_surgery()
+                            if check_into_hospital_for_surgery():
+                                print("Checked into hospital, stopping journal processing.")
+                                return True
 
                         combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
 
@@ -467,6 +469,6 @@ def check_into_hospital_for_surgery():
         return False
 
     print("SUCCESS: Surgery application submitted.")
-    send_discord_notification("Applied for surgery at hospital due to nauseous feeling.")
+    send_discord_notification("Applied for surgery at hospital due to flu.")
     return True
 
