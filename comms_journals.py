@@ -295,7 +295,7 @@ def process_unread_journal_entries(player_data):
 
     journal_send_content_raw = ''
     try:
-        journal_send_content_raw = global_vars.config['Journal Settings'].get('Journal_Send_To_Discord_Content', fallback='').lower()
+        journal_send_content_raw = global_vars.config['Journal Settings'].get('JournalSendToDiscord', fallback='').lower()
     except KeyError:
         print("WARNING: Missing [Journal Settings] section in settings.ini. No journal filters will be used.")
 

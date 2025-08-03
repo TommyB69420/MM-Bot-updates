@@ -94,19 +94,21 @@ def get_all_active_game_timers():
 
     # --- Phase 2: Calculate File-Based Timers & Aggravated Crime Cooldowns ---
 
-    # Yellow Pages Scan Timer
-    yellow_pages_scan_interval_hours = global_vars.config.getint('Database Scans', 'ScanIntervalHours', fallback=6)
+    # Yellow Pages Scan Timer (Always enabled, 7-hour interval)
+    yellow_pages_scan_interval_hours = 7
     last_yp_scan_time = _get_last_timestamp(global_vars.YELLOW_PAGES_LAST_SCAN_FILE)
     if last_yp_scan_time:
-        timers['yellow_pages_scan_time_remaining'] = max(0, yellow_pages_scan_interval_hours * 3600 - (current_time - last_yp_scan_time).total_seconds())
+        remaining = int(yellow_pages_scan_interval_hours * 3600 - (current_time - last_yp_scan_time).total_seconds())
+        timers['yellow_pages_scan_time_remaining'] = max(0, remaining)
     else:
         timers['yellow_pages_scan_time_remaining'] = 0  # If never scanned, scan immediately
 
-    # Funeral Parlour Scan Timer
-    funeral_parlour_scan_interval_hours = global_vars.config.getint('Database Scans', 'FPScanIntervalHours', fallback=7)
+    # Funeral Parlour Scan Timer (Always enabled, 8-hour interval)
+    funeral_parlour_scan_interval_hours = 8
     last_fp_scan_time = _get_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE)
     if last_fp_scan_time:
-        timers['funeral_parlour_scan_time_remaining'] = max(0, funeral_parlour_scan_interval_hours * 3600 - (current_time - last_fp_scan_time).total_seconds())
+        remaining = int(funeral_parlour_scan_interval_hours * 3600 - (current_time - last_fp_scan_time).total_seconds())
+        timers['funeral_parlour_scan_time_remaining'] = max(0, remaining)
     else:
         timers['funeral_parlour_scan_time_remaining'] = 0  # If never scanned, scan immediately
 
@@ -136,7 +138,7 @@ def get_all_active_game_timers():
         timers['check_bionics_store_time_remaining'] = 0.0 # If never checked, check immediately
 
     # Aggravated Crime Cooldowns (Base + Rechecks)
-    mins_between_aggs = global_vars.config.getint('Actions Settings', 'mins_between_aggs', fallback=30)
+    mins_between_aggs = global_vars.config.getint('Misc', 'MinsBetweenAggs', fallback=30)
     last_agg_crime_time_str = _read_text_file(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE)
     # Ensure last_agg_crime_time is a datetime object, default to far past if file empty
     last_agg_crime_time = datetime.datetime.strptime(last_agg_crime_time_str, "%Y-%m-%d %H:%M:%S.%f") if last_agg_crime_time_str else (current_time - datetime.timedelta(days=365))

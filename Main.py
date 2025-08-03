@@ -103,11 +103,7 @@ def get_enabled_configs(location):
     return {
     "do_earns_enabled": config.getboolean('Earns Settings', 'DoEarns', fallback=False),
     "do_community_services_enabled": config.getboolean('Actions Settings', 'CommunityService', fallback=False),
-    "mins_between_aggs": config.getint('Actions Settings', 'mins_between_aggs', fallback=30),
-    "do_yellow_pages_scan_enabled": config.getboolean('Database Scans', 'DoYellowPagesScan', fallback=False),
-    "yellow_pages_scan_interval_hours": config.getint('Database Scans', 'ScanIntervalHours', fallback=6),
-    "do_funeral_parlour_scan_enabled": config.getboolean('Database Scans', 'DoFuneralParlourScan', fallback=False),
-    "funeral_parlour_scan_interval_hours": config.getint('Database Scans', 'FPScanIntervalHours', fallback=7),
+    "mins_between_aggs": config.getint('Misc', 'MinsBetweenAggs', fallback=30),
     "do_hack_enabled": config.getboolean('Hack', 'DoHack', fallback=False),
     "do_pickpocket_enabled": config.getboolean('PickPocket', 'DoPickPocket', fallback=False),
     "do_mugging_enabled": config.getboolean('Mugging', 'DoMugging', fallback=False),
@@ -116,8 +112,8 @@ def get_enabled_configs(location):
     "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False),
     "do_launders_enabled": config.getboolean('Launder', 'DoLaunders', fallback=False),
     "do_manufacture_drugs_enabled": config.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False),
-    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'study_degrees', fallback=False),
-    "do_event_enabled": config.getboolean('Actions Settings', 'DoEvent', fallback=False),
+    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False),
+    "do_event_enabled": config.getboolean('Misc', 'DoEvent', fallback=False),
     "do_weapon_shop_check_enabled": config.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False),
@@ -163,20 +159,19 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Earn', earn))
     if cfg.getboolean('Actions Settings', 'CommunityService', fallback=False):
         active.append(('Community Service', action))
-    if cfg.getboolean('Actions Settings', 'study_degrees', fallback=False):
+    if cfg.getboolean('Actions Settings', 'StudyDegrees', fallback=False):
         active.append(('Study Degree', action))
-    if cfg.getboolean('Launder', 'DoLaunders', fallback=False):
-        active.append(('Launder', launder))
     if cfg.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False):
         active.append(('Manufacture Drugs', action))
-    if cfg.getboolean('Actions Settings', 'DoEvent', fallback=False):
+    if cfg.getboolean('Misc', 'DoEvent', fallback=False):
         active.append(('Event', event))
     if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
         active.append(('Firefighter Duties', action))
+    if cfg.getboolean('Launder', 'DoLaunders', fallback=False):
+        active.append(('Launder', launder))
 
     # Aggravated Crime logic
-    if any(cfg.getboolean(section, f'Do{key}', fallback=False) for section, key in [
-        ('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging')]):
+    if any(cfg.getboolean(section, f'Do{key}', fallback=False) for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging')]):
         active.append(('Aggravated Crime (General)', aggro))
     elif cfg.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False):
         if aggro > global_vars.ACTION_PAUSE_SECONDS:
@@ -204,11 +199,6 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Bank Casework', case))
         active.append(('Bank add clients', bank_add))
 
-    if cfg.getboolean('Database Scans', 'DoYellowPagesScan', fallback=False):
-        active.append(('Yellow Pages Scan', yps))
-    if cfg.getboolean('Database Scans', 'DoFuneralParlourScan', fallback=False):
-        active.append(('Funeral Parlour Scan', fps))
-
     if cfg.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in b for c, b in businesses.items() if c == location):
         active.append(('Check Weapon Shop', weapon))
     if cfg.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in b for c, b in businesses.items() if c == location):
@@ -217,6 +207,9 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Gym Trains', gym))
     if cfg.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in b for c, b in businesses.items() if c == location):
         active.append(('Check Bionics Shop', bionics))
+
+    active.append(('Yellow Pages Scan', yps))
+    active.append(('Funeral Parlour Scan', fps))
 
     print("\n--- Timers Under Consideration for Sleep Duration ---")
     for name, timer_val in active:
@@ -391,7 +384,7 @@ while True:
         continue
 
     # Yellow pages scan logic
-    if enabled_configs ['do_yellow_pages_scan_enabled'] and yellow_pages_scan_time_remaining <= 0:
+    if yellow_pages_scan_time_remaining <= 0:
         print(f"Yellow Pages Scan timer ({yellow_pages_scan_time_remaining:.2f}s) is ready. Attempting scan.")
         if execute_yellow_pages_scan():
             action_performed_in_cycle = True
@@ -402,7 +395,7 @@ while True:
         continue
 
     # Funeral Parlour scan logic
-    if enabled_configs['do_funeral_parlour_scan_enabled'] and funeral_parlour_scan_time_remaining <= 0:
+    if funeral_parlour_scan_time_remaining <= 0:
         print(f"Funeral Parlour Scan timer ({funeral_parlour_scan_time_remaining:.2f}s) is ready. Attempting scan.")
         if execute_funeral_parlour_scan():
             action_performed_in_cycle = True
@@ -670,18 +663,24 @@ while True:
     # --- Re-fetch all game timers just before determining sleep duration ---
     all_timers = get_all_active_game_timers()
 
-    # --- Return to the local city page if drifted ---
-    if "localcity/local.asp" not in global_vars.driver.current_url:
-        print(f"Current URL is '{global_vars.driver.current_url}', expected to include 'localcity/local.asp'. Navigating back...")
-        if _find_and_click(By.XPATH, "//span[@class='city']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
-            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-        else:
-            print("FAILED: Could not click the city span to return to local city page.")
-            continue  # Restart loop to try again
+    # --- Return to the resting page if drifted ---
+    resting_page_url = global_vars.config.get('Auth', 'RestingPage', fallback='').strip()
 
-        if "localcity/local.asp" not in global_vars.driver.current_url:
-            print(f"Still not back on local city page. Current URL: {global_vars.driver.current_url}")
-            continue  # Restart loop to reset state
+    if resting_page_url:
+        if resting_page_url not in global_vars.driver.current_url:
+            print(f"Current URL is '{global_vars.driver.current_url}', expected to include '{resting_page_url}'. Navigating back...")
+            try:
+                global_vars.driver.get(resting_page_url)
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            except Exception as e:
+                print(f"FAILED: Could not navigate to the resting page URL '{resting_page_url}'. Error: {e}")
+                continue  # Restart loop to try again
+
+            if resting_page_url not in global_vars.driver.current_url:
+                print(f"Still not back on resting page. Current URL: {global_vars.driver.current_url}")
+                continue  # Restart loop to reset state
+    else:
+        print("WARNING: No 'RestingPage' URL set in settings.ini under [Auth].")
 
     # --- Determine the total sleep duration ---
     total_sleep_duration = _determine_sleep_duration(action_performed_in_cycle, {**all_timers, 'occupation': occupation, 'location': location})
