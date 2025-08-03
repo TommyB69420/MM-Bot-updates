@@ -991,7 +991,7 @@ def execute_banker_add_clients(initial_player_data):
         # Exclude players from the same home city or from 'Hell'
         if db_player_home_city.lower() == current_player_home_city.lower():
             continue
-        if db_player_home_city.lower() == "hell":
+        if db_player_home_city.lower() in ["hell", "heaven"]:
             continue
 
         # Passed all filters — add to potential clients
@@ -1110,34 +1110,35 @@ def get_existing_banker_clients():
     """
     Scrapes the gangster names the banker already does business with
     from the Laundering Deals table under the 'Gangster' column.
+    Ensures it is on the 'Deals' tab first before scraping.
     """
     try:
-        # Get the innerHTML of the div containing the client list
-        clients_list_html = global_vars.driver.find_element(By.XPATH, ".//*[@id='account_profile']/div[@id='holder_content']").get_attribute("innerHTML")
+        # Navigate to the "Deals" tab to ensure the client list is loaded
+        deals_tab_xpath = ".//*[@id='content']/div[@id='account_holder']/div[@id='account_nav']/ul/li[1]/a"
+        _find_and_click(By.XPATH, deals_tab_xpath, pause=global_vars.ACTION_PAUSE_SECONDS)
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+        # Grab the HTML content of the clients list
+        clients_list_html = global_vars.driver.find_element(
+            By.XPATH, ".//*[@id='account_profile']/div[@id='holder_content']").get_attribute("innerHTML")
 
         existing_clients = []
-        if 'no deals' in clients_list_html:
+        if 'no deals' in clients_list_html.lower():
             print("No existing banker clients found.")
             return []
 
-        # Split the HTML by "<tr>" to get individual rows
-        clients_list_split = clients_list_html.split("<tr>")
-
-        # Iterate through the split parts to find client entries
-        for client_row in clients_list_split[2:]:
-            if 'display=gangster' in client_row:
-                item_split = client_row.split("<td") # Split by "<td"
-                if len(item_split) > 1: # Ensure there's a second <td>
-                    client_name_td = item_split[1] # The second <td> contains the client name
-                    # Use regex to extract the name between '\d+">' and '<'
-                    match = re.search(r'\d+">(.+?)<', client_name_td)
-                    if match:
-                        client_name = match.group(1).strip()
-                        if client_name:
-                            existing_clients.append(client_name)
+        # Parse HTML rows for client names
+        for row in clients_list_html.split("<tr>"):
+            if 'display=gangster' in row:
+                match = re.search(r'\d+">(.+?)<', row)
+                if match:
+                    client_name = match.group(1).strip()
+                    if client_name:
+                        existing_clients.append(client_name)
 
         print(f"Existing banker clients found: {existing_clients}")
         return existing_clients
+
     except Exception as e:
         print(f"ERROR: Could not fetch existing banker clients: {e}")
         return []

@@ -560,8 +560,6 @@ while True:
         print(f"Judge Casework timer ({case_time_remaining:.2f}s) is ready. Attempting judge cases.")
         if execute_judge_casework_logic(initial_player_data):
             action_performed_in_cycle = True
-    else:
-        print(f"Skipping Judge Casework: Conditions not met. Occupation: {occupation}, Location: {location}, Home City: {home_city}, Timer: {case_time_remaining:.2f}s")
 
     if perform_critical_checks(character_name):
         continue

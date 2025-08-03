@@ -135,31 +135,43 @@ def withdraw_money(amount: int) -> bool:
     Returns True if the withdrawal was successful, False otherwise.
     """
     print(f"Attempting to withdraw ${amount:,} from the bank.")
+    initial_url = _get_current_url()
 
-    # Navigate to Bank page
-    if not _navigate_to_page_via_menu(
-        "//span[@class='income']",
-        "//a[normalize-space()='Bank']",
-        "Bank"
-    ):
-        print("Failed to navigate to the Bank page.")
-        return False
+    try:
+        # Navigate to Bank page
+        if not _navigate_to_page_via_menu(
+            "//span[@class='income']",
+            "//a[normalize-space()='Bank']",
+            "Bank"
+        ):
+            print("Failed to navigate to the Bank page.")
+            return False
 
-    if not _find_and_click(By.XPATH, "//a[normalize-space()='Withdrawal']"):
-        print("Failed to click withdrawal button.")
-        return False
+        if not _find_and_click(By.XPATH, "//a[normalize-space()='Withdrawal']"):
+            print("Failed to click withdrawal button.")
+            return False
 
-    if not _find_and_send_keys(By.XPATH, "//input[@name='withdrawal']", str(amount)):
-        print("Failed to enter withdrawal amount.")
-        return False
+        if not _find_and_send_keys(By.XPATH, "//input[@name='withdrawal']", str(amount)):
+            print("Failed to enter withdrawal amount.")
+            return False
 
-    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
-        print("Failed to click withdraw submit button.")
-        return False
+        if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+            print("Failed to click withdraw submit button.")
+            return False
 
-    print(f"Successfully withdrew ${amount:,}.")
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
-    return True
+        print(f"Successfully withdrew ${amount:,}.")
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+        return True
+
+    finally:
+        # Safely return to the previous page
+        try:
+            if initial_url:
+                global_vars.driver.get(initial_url)
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            print("WARNING: Could not return to previous page after withdrawal.")
+
 
 def transfer_money(amount, recipient):
     """
@@ -277,7 +289,6 @@ def check_weapon_shop(initial_player_data):
     Withdraws money if required and automatically buy top weapons if enabled in settings.ini.
     """
     print("\n--- Beginning Weapon Shop Operation ---")
-    initial_url = global_vars.driver.current_url
 
     # The main loop has already determined this timer is ready, so no need to check again
     print("Timer was marked ready by main loop. Proceeding with Weapon Shop check.")
@@ -366,14 +377,7 @@ def check_weapon_shop(initial_player_data):
                 if clean_money < price:
                     amount_needed = price - clean_money
                     print(f"Not enough clean money to buy {weapon}. Withdrawing ${amount_needed:,}.")
-                    if withdraw_money(amount_needed):
-                        # Navigate back to Weapon Shop after withdrawal
-                        _navigate_to_page_via_menu(
-                            "//span[@class='city']",
-                            "//p[@class='weapon_shop']",
-                            "Weapon Shop"
-                        )
-                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    withdraw_money(amount_needed)
 
                 auto_buy_weapon(weapon)
                 break # Remove this break to buy all weapons in the priority list if multiple is in stock.
@@ -398,12 +402,7 @@ def check_weapon_shop(initial_player_data):
     _set_last_timestamp(global_vars.WEAPON_SHOP_NEXT_CHECK_FILE, next_check_time)
     global_vars._script_weapon_shop_cooldown_end_time = next_check_time
     print(f"Weapon Shop check completed. Next check scheduled for {global_vars._script_weapon_shop_cooldown_end_time.strftime('%Y-%m-%d %H:%M:%S')}.")
-
-    # Return to the original page
-    global_vars.driver.get(initial_url)
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     return True
-
 
 def auto_buy_weapon(item_name: str):
     """
@@ -448,7 +447,6 @@ def auto_buy_weapon(item_name: str):
         else:
             print(f"[AutoBuy] FAILED: No confirmation message found for {item_name}.")
             send_discord_notification(f"Attempted to purchase {item_name}, but failed. The item is gone, no available hands, or insufficient funds.")
-
 
 def check_drug_store(initial_player_data):
     """
@@ -534,14 +532,7 @@ def check_drug_store(initial_player_data):
         if clean_money < price:
             amount_needed = price - clean_money
             print(f"Not enough clean money to buy {name}. Withdrawing ${amount_needed:,}.")
-            if withdraw_money(amount_needed):
-                # Navigate back to Drug Store after withdrawal
-                _navigate_to_page_via_menu(
-                    "//span[@class='city']",
-                    "//a[@class='business drug_store']",
-                    "Drug Store"
-                )
-                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            withdraw_money(amount_needed)
 
         auto_buy_drug_store_item(name)
 
@@ -607,7 +598,6 @@ def check_bionics_shop(initial_player_data):
     and attempts auto-buy if enabled and affordable.
     """
     print("\n--- Beginning Bionics Shop Operation ---")
-    initial_url = global_vars.driver.current_url
 
     # Settings
     config = global_vars.config['Bionics Shop']
@@ -668,11 +658,7 @@ def check_bionics_shop(initial_player_data):
                 if clean_money < price:
                     amount_needed = price - clean_money
                     print(f"Not enough clean money to buy {bionic}. Withdrawing ${amount_needed:,}.")
-                    if withdraw_money(amount_needed):
-                        _navigate_to_page_via_menu("//span[@class='city']",
-                                                   "//a[@class='business bionics']",
-                                                   "Bionics Shop")
-                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    withdraw_money(amount_needed)
 
                 auto_buy_bionic(bionic, data["id"])
                 break
@@ -690,9 +676,6 @@ def check_bionics_shop(initial_player_data):
     next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_check, max_check))
     _set_last_timestamp(global_vars.BIONICS_SHOP_NEXT_CHECK_FILE, next_check)
     print(f"Bionics Shop check complete. Next check at {next_check.strftime('%Y-%m-%d %H:%M:%S')}.")
-
-    global_vars.driver.get(initial_url)
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     return True
 
 def auto_buy_bionic(item_name: str, item_id: str):
@@ -827,15 +810,6 @@ def gym_training():
         # Withdraw money for membership
         if not withdraw_money(10000):
             print("FAILED: Could not withdraw money for membership.")
-            return False
-
-        # Navigate back to gym
-        if not _navigate_to_page_via_menu(
-            "//span[@class='city']",
-            "//a[@class='business gym']",
-            "Gym"
-        ):
-            print("FAILED: Could not return to Gym after withdrawal.")
             return False
 
         dropdown_options = _get_dropdown_options(By.XPATH, dropdown_xpath)
