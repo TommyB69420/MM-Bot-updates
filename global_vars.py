@@ -6,7 +6,7 @@ import requests
 import configparser
 import subprocess
 import time
-import socket
+import json
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
@@ -119,6 +119,8 @@ ALL_DEGREES_FILE = os.path.join(COOLDOWN_DATA_DIR, 'all_degrees.json')
 WEAPON_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "weapon_shop_next_check.txt")
 GYM_TRAINING_FILE = os.path.join("game_data", "gym_timer.txt")
 BIONICS_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "bionics_shop_next_check.txt")
+POLICE_911_NEXT_POST_FILE = os.path.join(COOLDOWN_DATA_DIR, "police_911_next_post.txt")
+POLICE_911_CACHE_FILE = os.path.join(COOLDOWN_DATA_DIR, "police_911_cache.json")
 
 # Define keys for database (aggravated_crime_cooldowns.json) entries
 MINOR_CRIME_COOLDOWN_KEY = 'minor_crime_cooldown'
@@ -134,6 +136,7 @@ _script_case_cooldown_end_time = datetime.datetime.now()
 _script_event_cooldown_end_time = datetime.datetime.now()
 # Career-specific timers
 _script_bank_add_clients_cooldown_end_time = datetime.datetime.now()
+_script_post_911_cooldown_end_time = datetime.datetime.min
 # Aggravated crime timers
 _script_armed_robbery_recheck_cooldown_end_time = datetime.datetime.now()
 _script_torch_recheck_cooldown_end_time = datetime.datetime.now()

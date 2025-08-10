@@ -13,10 +13,11 @@ from occupations import execute_judge_casework_logic, execute_lawyer_casework_lo
     execute_fire_duties_logic
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail
 from database_functions import init_local_db
+from police import police_911, prepare_police_cases
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
 from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
-    clean_money_on_hand_logic, gym_training, check_bionics_shop
+    clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -118,7 +119,10 @@ def get_enabled_configs(location):
     "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False),
     "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any ("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location)
+    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any ("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower(),
+    "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False),
+    "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False),
 }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data):
@@ -148,6 +152,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
     drug = get_timer('check_drug_store_time_remaining')
     gym = get_timer('gym_trains_time_remaining')
     bionics = get_timer('check_bionics_store_time_remaining')
+    post_911 = get_timer('post_911_time_remaining')
 
     cfg = global_vars.config
     businesses = global_vars.private_businesses
@@ -165,10 +170,12 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Manufacture Drugs', action))
     if cfg.getboolean('Misc', 'DoEvent', fallback=False):
         active.append(('Event', event))
-    if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
-        active.append(('Firefighter Duties', action))
     if cfg.getboolean('Launder', 'DoLaunders', fallback=False):
         active.append(('Launder', launder))
+    if cfg.get('Actions Settings', 'Training', fallback='').strip():
+        active.append(('Training', action))
+    active.append(('Yellow Pages Scan', yps))
+    active.append(('Funeral Parlour Scan', fps))
 
     # Aggravated Crime logic
     if any(cfg.getboolean(section, f'Do{key}', fallback=False) for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging')]):
@@ -184,7 +191,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         else:
             active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
 
-    # Casework based on occupation
+    # Career specific based on occupation
     if cfg.getboolean('Judge', 'Do_Cases', fallback=False):
         active.append(('Judge Casework', case))
     if occupation == "Lawyer":
@@ -198,7 +205,14 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
     if occupation in ("Bank Teller", "Loan Officer", "Bank Manager"):
         active.append(('Bank Casework', case))
         active.append(('Bank add clients', bank_add))
+    if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
+        active.append(('Firefighter Duties', action))
+    if cfg.getboolean('Police', 'Post911', fallback=False):
+        active.append(('Post 911', post_911))
+    if cfg.getboolean('Police', 'DoCases', fallback=False):
+        active.append(('Do Cases', case))
 
+    # City actions
     if cfg.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in b for c, b in businesses.items() if c == location):
         active.append(('Check Weapon Shop', weapon))
     if cfg.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in b for c, b in businesses.items() if c == location):
@@ -207,9 +221,6 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Gym Trains', gym))
     if cfg.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in b for c, b in businesses.items() if c == location):
         active.append(('Check Bionics Shop', bionics))
-
-    active.append(('Yellow Pages Scan', yps))
-    active.append(('Funeral Parlour Scan', fps))
 
     print("\n--- Timers Under Consideration for Sleep Duration ---")
     for name, timer_val in active:
@@ -357,17 +368,22 @@ while True:
     launder_time_remaining = all_timers.get('launder_time_remaining', float('inf'))
     event_time_remaining = all_timers.get('event_time_remaining', float('inf'))
 
+    # Aggravated crime timers
     aggravated_crime_time_remaining = all_timers.get('aggravated_crime_time_remaining', float('inf'))
     armed_robbery_recheck_time_remaining = (getattr(global_vars, "_script_armed_robbery_recheck_cooldown_end_time", datetime.datetime.min) - datetime.datetime.now()).total_seconds()
     torch_recheck_time_remaining = (getattr(global_vars, "_script_torch_recheck_cooldown_end_time", datetime.datetime.min) - datetime.datetime.now()).total_seconds()
-
     yellow_pages_scan_time_remaining = all_timers.get('yellow_pages_scan_time_remaining', float('inf'))
     funeral_parlour_scan_time_remaining = all_timers.get('funeral_parlour_scan_time_remaining', float('inf'))
 
+    # Misc city timers
     check_weapon_shop_time_remaining = all_timers.get('check_weapon_shop_time_remaining', float('inf'))
     check_drug_store_time_remaining = all_timers.get('check_drug_store_time_remaining', float('inf'))
     gym_trains_time_remaining = all_timers.get('gym_trains_time_remaining', float('inf'))
     check_bionics_store_time_remaining = all_timers.get('check_bionics_store_time_remaining', float('inf'))
+
+    # Career specific timers
+    bank_add_clients_time_remaining = all_timers.get('bank_add_clients_time_remaining', float('inf'))
+    post_911_time_remaining = all_timers.get('post_911_time_remaining', float('inf'))
 
     if perform_critical_checks(character_name):
         continue
@@ -434,6 +450,17 @@ while True:
             action_performed_in_cycle = True
         else:
             print("Study Degree logic did not perform an action or failed. Setting fallback cooldown.")
+
+    if perform_critical_checks(character_name):
+        continue
+
+    # Police Training Logic
+    if enabled_configs['do_training_enabled'] == "police" and action_time_remaining <= 0:
+        print(f"Police training timer ({action_time_remaining:.2f}s) is ready. Attempting police training.")
+        if police_training():
+            action_performed_in_cycle = True
+        else:
+            print("Police training logic did not perform an action or failed. Setting fallback cooldown.")
 
     if perform_critical_checks(character_name):
         continue
@@ -570,6 +597,24 @@ while True:
     if occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director") and case_time_remaining <= 0:
         print(f"Medical Casework timer ({case_time_remaining:.2f}s) is ready. Attempting medical cases.")
         if execute_medical_casework_logic(initial_player_data):
+            action_performed_in_cycle = True
+
+    if perform_critical_checks(character_name):
+        continue
+
+    # Police Casework Logic
+    if enabled_configs['do_police_cases_enabled'] and occupation in ["Police Officer"] and location == home_city and case_time_remaining <= 0:
+        print(f"Police case timer ({case_time_remaining:.2f}s) is ready. Attempting to do Police Cases")
+        if prepare_police_cases(character_name):
+            action_performed_in_cycle = True
+
+    if perform_critical_checks(character_name):
+        continue
+
+    # Post 911 Logic
+    if enabled_configs['do_post_911_enabled'] and occupation in ["Police Officer"] and location == home_city and post_911_time_remaining <= 0:
+        print(f"Post 911 timer ({post_911_time_remaining:.2f}s) is ready. Attempting to post 911")
+        if police_911():
             action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
