@@ -13,7 +13,7 @@ from occupations import execute_judge_casework_logic, execute_lawyer_casework_lo
     execute_fire_duties_logic
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail
 from database_functions import init_local_db
-from police import police_911, prepare_police_cases
+from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
 from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
@@ -472,6 +472,14 @@ while True:
             action_performed_in_cycle = True
         else:
             print("Police training logic did not perform an action or failed. Setting fallback cooldown.")
+
+    # Forensics Training Logic
+    if enabled_configs['do_training_enabled'] == "forensics" and occupation in ["Police Officer"] and location == home_city and action_time_remaining <= 0:
+        print(f"Forensics training timer ({action_time_remaining:.2f}s) is ready. Attempting forensics training.")
+        if train_forensics():
+            action_performed_in_cycle = True
+        else:
+            print("Forensics training logic did not perform an action or failed. Setting fallback cooldown.")
 
     if perform_critical_checks(character_name):
         continue

@@ -220,6 +220,11 @@ def get_all_active_game_timers():
     if script_police_case_remaining > 0:
         timers['case_time_remaining'] = max(timers.get('case_time_remaining', 0), script_police_case_remaining)
 
+    # Train Forensics cooldown
+    script_train_forensics_remaining = (global_vars._script_action_cooldown_end_time - current_time).total_seconds()
+    if script_train_forensics_remaining > 0:
+        timers['action_time_remaining'] = max(timers.get('action_time_remaining', 0), script_train_forensics_remaining)
+
     # Earn Cooldown
     script_earn_remaining = (global_vars._script_earn_cooldown_end_time - current_time).total_seconds()
     if script_earn_remaining > 0:

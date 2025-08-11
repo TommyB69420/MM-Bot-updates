@@ -9,7 +9,7 @@ from selenium.webdriver.common.keys import Keys
 from comms_journals import send_discord_notification
 from database_functions import _set_last_timestamp
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, \
-    _find_and_send_keys, _get_element_text
+    _find_and_send_keys, _get_element_text, _select_dropdown_option
 
 
 def police_911():
@@ -103,31 +103,42 @@ def police_911():
 
     # Open correct thread
     print(f"Searching for Interpol thread titled: '{thread_title}'...")
-    thread_rows = _find_elements(By.XPATH, "//table[3]//tr[@class='thread']")
+    # Grab all rows from the Interpol thread list
+    thread_rows = _find_elements(By.XPATH, "//div[@id='thread_list']//tr[@class='thread']")
     if not thread_rows:
-        print("FAILED: No thread rows found in table[3].")
+        print("FAILED: No thread rows found in Interpol list.")
         next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
         _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
         global_vars._script_post_911_cooldown_end_time = next_check_time
-
         return False
 
+    found = False
     for row in thread_rows:
         try:
-            thread_link = row.find_element(By.XPATH, ".//a")
-            title = thread_link.text.strip()
+            # Only consider the title link inside the topic cell
+            title_a = row.find_element(By.XPATH, ".//td[contains(@class,'topic')]//a[1]")
+            title = (title_a.text or "").strip()
             if title.lower() == thread_title.lower():
                 print(f"Opening thread: {title}")
-                thread_link.click()
+                title_a.click()
+                found = True
                 break
-        except Exception as e:
+        except Exception:
             continue
-    else:
+
+    if not found:
+        # Fallback — direct lookup anywhere in the list by exact text
+        direct = _find_element(By.XPATH, f"//div[@id='thread_list']//td[contains(@class,'topic')]/a[normalize-space()='{thread_title}']",)
+        if direct:
+            print(f"Opening thread (fallback): {thread_title}")
+            direct.click()
+            found = True
+
+    if not found:
         print(f"FAILED: Could not find thread titled '{thread_title}' in Interpol tab.")
         next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
         _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
         global_vars._script_post_911_cooldown_end_time = next_check_time
-
         return False
 
     # Click Post Reply
@@ -290,44 +301,62 @@ def prepare_police_cases(character_name):
 
     if intray_rows:
         picked = None
+        all_intray_orange = True
         for row in intray_rows:
             try:
-                # Cols: 1 Case | 2 Crime | 3 Victim | 4 Witness | 5 DNA | 6 Prints | 7 Fire | 8 Autopsy | 9 Select
                 w  = _cell_bg(row.find_element(By.XPATH, "./td[4]"))
                 d  = _cell_bg(row.find_element(By.XPATH, "./td[5]"))
                 fp = _cell_bg(row.find_element(By.XPATH, "./td[6]"))
                 f  = _cell_bg(row.find_element(By.XPATH, "./td[7]"))
                 a  = _cell_bg(row.find_element(By.XPATH, "./td[8]"))
 
-                # (Optional) log to verify colors in practice
                 case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
                 print(f"INTRAY {case_no} -> W:{w} DNA:{d} FP:{fp} Fire:{f} Aut:{a}")
 
-                # Skip any row with ANY orange indicator
                 if any(_is_orange(x) for x in (w, d, fp, f, a)):
                     continue
 
+                all_intray_orange = False
                 picked = row
                 break
             except Exception:
                 continue
 
         if picked:
-            print("Selecting an intray case with no orange boxes and opening…")
-            picked.find_element(By.XPATH, ".//input[@type='radio' and @name='case']").click()
-            if not _find_and_click(By.XPATH, "//input[@name='result']"):
-                print("FAILED: Could not click Open Case.")
+            # Open the intray case we selected
+            try:
+                picked.find_element(By.XPATH, ".//input[@type='radio' and @name='case']").click()
+                btn = _find_element(By.XPATH, "//input[@type='submit' and contains(@value,'Select Case')]")
+                if btn:
+                    btn.click()
+                else:
+                    print("FAILED: 'Select Case' button not found.")
+                    return False
+            except Exception as e:
+                print(f"FAILED: Could not open the selected intray case row: {e}")
                 return False
+
+            # Give the case page a moment to render
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-            # Witness-only safeguard
+            # Sanity check: ensure the case body exists before proceeding
+            if not _case_body_html():
+                print("FAILED: Case view did not load after selecting intray row.")
+                return False
+
             if _is_witness_only_case():
                 print("WITNESS-ONLY CASE: burying.")
                 _bury_case()
                 return True
 
             return solve_case(character_name)
+
         else:
+            if all_intray_orange:
+                print("All intray cases have orange boxes — cooling down before re-check.")
+                mins = random.uniform(5, 7)
+                global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
+                return True
             print("All intray cases have orange boxes — skipping intray and checking Reported Cases…")
 
     # 5) Reported Cases: pick best row with NO orange; prefer green/yellow DNA/Prints
@@ -1183,4 +1212,73 @@ def _try_infer_suspect_from_911(cues) -> str | None:
         print(f"911 infer failed: {e}")
         return None
 
+def train_forensics():
+    """
+    Navigates to Police -> Training.
+    - If a success message is present, treat as subsequent training and parse progress.
+    - If no success message, treat as first-time setup: select 'Forensics' and submit once.
+    Returns True if training progressed or setup succeeded; False when training is complete or on failure.
+    """
+    print("\n--- Police Training: Forensics ---")
 
+    # Ensure we're on the City page (Police menu not visible from everywhere)
+    if not _find_and_click(By.XPATH, "//span[@class='city']"):
+        print("FAILED: Could not navigate to City page.")
+        return False
+
+    # Go straight to the Training page (this alone triggers subsequent training)
+    if not _navigate_to_page_via_menu(
+        "//a[normalize-space()='']//span[@class='police']",
+        "//a[normalize-space()='Training']",
+        "Police - Training"
+    ):
+        return False
+
+    # Subsequent path: look for success message first
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    success_xpath = "//div[@id='success']"
+    msg = _get_element_text(By.XPATH, success_xpath, timeout=3) or ""
+    msg = (msg or "").strip()
+
+    if msg:
+        print(f"TRAINING MESSAGE: {msg}")
+        m = re.search(r"\((\d+)\s+of\s+(\d+)\s+studies\)", msg, flags=re.I)
+        if m:
+            current = int(m.group(1))
+            total = int(m.group(2))
+            if current >= total:
+                print("Training complete — reached final study count. Stopping further training.")
+                return False
+            print(f"Training progress: {current}/{total}. {total - current} to go.")
+            return True
+        else:
+            print("NOTE: Could not parse study count from success message.")
+            return True  # Still a successful subsequent train
+
+    # First-time setup: no success box → select Forensics and submit once
+    print("No success message found — assuming first-time setup.")
+    dropdown_xpath = "//select[@name='option']"
+    role_dropdown = _find_element(By.XPATH, dropdown_xpath, timeout=3, suppress_logging=True)
+    if not role_dropdown:
+        print("FAILED: Expected role dropdown for first-time setup but none was found.")
+        return False
+
+    print("Role dropdown detected — selecting 'Forensics'…")
+    if not _select_dropdown_option(By.XPATH, dropdown_xpath, "forensics", use_value=True):
+        if not _select_dropdown_option(By.XPATH, dropdown_xpath, "Forensics", use_value=False):
+            print("FAILED: Could not select 'Forensics' in the role dropdown.")
+            return False
+
+    print("Submitting initial training…")
+    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+        print("FAILED: Could not find/click the Training submit button.")
+        return False
+
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    msg = _get_element_text(By.XPATH, success_xpath, timeout=3) or ""
+    if msg.strip():
+        print(f"TRAINING MESSAGE: {msg.strip()}")
+    else:
+        print("NOTE: No success message found after initial setup submit (may be transient).")
+
+    return True
