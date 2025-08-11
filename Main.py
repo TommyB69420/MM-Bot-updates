@@ -54,47 +54,58 @@ def fetch_initial_player_data():
             player_data[key] = None
     return player_data
 
-def check_for_logout_and_login():
+def check_for_logout_and_login() -> bool:
     """
-    Checks if the bot is logged out (on the default.asp page) and performs login if necessary.
-    Returns True if a login was performed, False otherwise.
+    Handles bounce-back after logging in:
+    - If on login screen (default.asp), enter username/password and click Sign in.
+    - If redirected back to login, try again until logged in.
+    - Once logged in, click Play Now.
+    Returns True if a login attempt was made, False otherwise.
     """
-    if "default.asp" in global_vars.driver.current_url.lower():
-        print("Detected logout to default.asp. Attempting to log in...")
-        send_discord_notification("Logged out - Attempting to log in.")
+    import time
 
-        username = global_vars.config['Login Credentials'].get('UserName')
-        password = global_vars.config['Login Credentials'].get('Password')
+    if "default.asp" not in (global_vars.driver.current_url or "").lower():
+        return False  # Not on login screen
 
-        if not username or not password:
-            print("ERROR: Login credentials (UserName or Password) not found in settings.ini.")
-            send_discord_notification("Login credentials missing. Cannot log in.")
-            return False
+    username = global_vars.config['Login Credentials'].get('UserName')
+    password = global_vars.config['Login Credentials'].get('Password')
+    if not username or not password:
+        print("ERROR: Missing UserName/Password in settings.ini.")
+        send_discord_notification("Login credentials missing. Cannot log in.")
+        return False
+
+    send_discord_notification("Logged out — attempting to log in.")
+    login_attempted = False
+
+    while True:
+        login_attempted = True
+        print("Attempting login…")
 
         if not _find_and_send_keys(By.XPATH, "//form[@id='loginForm']//input[@id='email']", username):
             print("FAILED: Could not enter username.")
-            send_discord_notification("Failed to enter username during login.")
-            return False
-
+            return True
         if not _find_and_send_keys(By.XPATH, "//input[@id='pass']", password):
             print("FAILED: Could not enter password.")
-            send_discord_notification("Failed to enter password during login.")
-            return False
-
-        if not _find_and_click(By.XPATH, "//button[normalize-space()='Sign in']", pause=global_vars.ACTION_PAUSE_SECONDS * 3):
+            return True
+        if not _find_and_click(By.XPATH, "//button[normalize-space()='Sign in']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
             print("FAILED: Could not click Sign In button.")
-            send_discord_notification("Failed to click Sign In button during login.")
-            return False
+            return True
 
-        if not _find_and_click(By.XPATH, "//a[@title='Log in with the character!|Get inside the world of MafiaMatrix!']", pause=global_vars.ACTION_PAUSE_SECONDS * 5):
-            print("FAILED: Could not click Play Now button.")
-            send_discord_notification("Failed to click Play Now button after login.")
-            return False
+        # Wait briefly then check URL
+        time.sleep(2)
+        if "default.asp" not in (global_vars.driver.current_url or "").lower():
+            if _find_and_click(By.XPATH, "//a[@title='Log in with the character!|Get inside the world of MafiaMatrix!']",
+                               pause=global_vars.ACTION_PAUSE_SECONDS * 3):
+                print("Successfully logged in.")
+                send_discord_notification("Logged in successfully!")
+            else:
+                print("Logged in, but Play Now click failed.")
+                send_discord_notification("Logged in, but Play Now click failed.")
+            return True
 
-        print("Successfully logged in.")
-        send_discord_notification("Logged In Successfully!")
-        return True
-    return False
+        print("Bounce back to login detected. Retrying…")
+        time.sleep(1)  # small pause before retry
+
 
 def get_enabled_configs(location):
     """
