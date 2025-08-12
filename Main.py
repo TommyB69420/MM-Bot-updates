@@ -222,6 +222,9 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Post 911', post_911))
     if cfg.getboolean('Police', 'DoCases', fallback=False):
         active.append(('Do Cases', case))
+    if cfg.getboolean('Police', 'DoForensics', fallback=False):
+        effective_forensics = max(action, case)
+        active.append(('Forensics', effective_forensics))
 
     # City actions
     if cfg.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in b for c, b in businesses.items() if c == location):

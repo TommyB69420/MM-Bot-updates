@@ -7,61 +7,48 @@ import global_vars
 import os, json, re
 from selenium.webdriver.common.keys import Keys
 from comms_journals import send_discord_notification
-from database_functions import _set_last_timestamp
-from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, \
-    _find_and_send_keys, _get_element_text, _select_dropdown_option
+from database_functions import _set_last_timestamp, _read_json_file, _write_json_file
+from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, _find_and_send_keys, _get_element_text, _select_dropdown_option
 
+def schedule_next_911_check(min_m: float = 20, max_m: float = 25, ret: bool = False):
+    next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_m, max_m))
+    _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check)
+    global_vars._script_post_911_cooldown_end_time = next_check
+    return ret
 
 def police_911():
     """
-    Automates copying 911  list and posting it in the designated Interpol thread.
+    Automates copying the 911 list and posting it in the designated Interpol thread.
     """
-    print("\n--- Starting Police 911 Automation ---")
+    print("\n--- Starting Police 911 Posting ---")
 
     cfg = configparser.ConfigParser()
     cfg.read('settings.ini')
 
     thread_title = cfg.get('Police', '911Thread', fallback='').strip()
     if not thread_title:
-        print("FAILED: No thread title defined in settings.ini under [Police] 911Thread.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        print("FAILED: No 911 thread title defined in settings.ini.")
+        return schedule_next_911_check()
 
         # Ensure we're on the city page to access the Police menu
     if not _find_and_click(By.XPATH, "//span[@class='city']"):
         print("FAILED: Could not navigate to city page before Police menu.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Navigate to Police then Emergency Call Register
     if not _navigate_to_page_via_menu(
         "//a[normalize-space()='']//span[@class='police']",
         "//a[normalize-space()='Emergency call register']",
-        "Emergency Call Register"
-    ):
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        "Emergency Call Register"):
+        return schedule_next_911_check()
 
     # Copy the 911 list
-    print("Reading 911 table content...")
+    print("Reading 911 content...")
 
     rows = _find_elements(By.XPATH, "//table[@id='casestable']//tr")
     if not rows or len(rows) <= 1:
-        print("FAILED: Could not find or parse 911 table rows.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        print("FAILED: Could not find or parse 911 rows.")
+        return schedule_next_911_check()
 
     # Skip the header row
     table_data = []
@@ -81,36 +68,25 @@ def police_911():
                 send_discord_notification(f"911 Reported: {time} {crime} {victim} {suspect}")
 
     if not table_data:
-        print("FAILED: 911 table had no valid entries.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        print("FAILED: 911 had no valid entries.")
+        return schedule_next_911_check()
 
     compiled_911_list = "\n".join(table_data)
     print(f"Successfully compiled {len(table_data)} 911 entries.")
 
     # Navigate to Interpol tab
-    print("Navigating to Interpol tab...")
+    print("Navigating to Interpol...")
     if not _find_and_click(By.XPATH, "(//a[normalize-space()='Interpol'])[1]"):
-        print("FAILED: Could not navigate to Interpol tab.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        print("FAILED: Could not navigate to Interpol.")
+        return schedule_next_911_check()
 
     # Open correct thread
-    print(f"Searching for Interpol thread titled: '{thread_title}'...")
+    print(f"Searching Interpol for '{thread_title}'...")
     # Grab all rows from the Interpol thread list
     thread_rows = _find_elements(By.XPATH, "//div[@id='thread_list']//tr[@class='thread']")
     if not thread_rows:
         print("FAILED: No thread rows found in Interpol list.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-        return False
+        return schedule_next_911_check()
 
     found = False
     for row in thread_rows:
@@ -119,7 +95,7 @@ def police_911():
             title_a = row.find_element(By.XPATH, ".//td[contains(@class,'topic')]//a[1]")
             title = (title_a.text or "").strip()
             if title.lower() == thread_title.lower():
-                print(f"Opening thread: {title}")
+                print(f"Opening {title}")
                 title_a.click()
                 found = True
                 break
@@ -135,51 +111,31 @@ def police_911():
             found = True
 
     if not found:
-        print(f"FAILED: Could not find thread titled '{thread_title}' in Interpol tab.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-        return False
+        print(f"FAILED: Could not find thread titled '{thread_title}' in Interpol.")
+        return schedule_next_911_check()
 
     # Click Post Reply
     print("Clicking Post Reply...")
     if not _find_and_click(By.XPATH, "//body[1]/div[4]/div[4]/form[1]/div[1]/div[2]/table[1]/tbody[1]/tr[1]/td[1]/a[1]"):
         print("FAILED: Could not click Post Reply button.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Paste copied 911 list into reply box
     print("Pasting 911 list into reply box...")
     if not _find_and_send_keys(By.XPATH, "//textarea[@id='body']", compiled_911_list):
         print("FAILED: Could not paste into text box.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Click "local" filter
-    print("Clicking 'local' filter...")
     if not _find_and_click(By.XPATH, "//span[@class='list-show selected']"):
         print("FAILED: Could not click 'local' filter.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Copy the online list
     print("Clicking 'Copy online list'...")
     if not _find_and_click(By.XPATH, "//a[normalize-space()='Copy online list']"):
         print("FAILED: Could not click 'Copy online list'.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Append the online list to text area
     print("Appending online list to text box...")
@@ -204,65 +160,50 @@ def police_911():
         # Persist crimes + who-was-online in one JSON
         if parsed_rows:
             _append_911_cache(parsed_rows)
-            print(f"Cached {len(parsed_rows)} 911 rows with online users to local JSON.")
+            print(f"Cached {len(parsed_rows)} 911 rows with online users to game_data.")
 
     else:
         print("FAILED: Could not find textarea to append online list.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
-
-        return False
+        return schedule_next_911_check()
 
     # Post the reply
     print("Posting the reply...")
     if not _find_and_click(By.XPATH, "//input[@name='Submit']"):
         print("FAILED: Could not click Post Reply submit button.")
-        next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-        _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-        global_vars._script_post_911_cooldown_end_time = next_check_time
+        return schedule_next_911_check()
 
-        return False
-
-    print("Successfully posted 911 list to Interpol thread.")
-    next_check_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(20, 25))
-    _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check_time)
-    global_vars._script_post_911_cooldown_end_time = next_check_time
-
-    return True
+    print("Successfully posted 911 to Interpol thread.")
+    return schedule_next_911_check(ret=True)
 
 def prepare_police_cases(character_name):
     """
     Main police case runner:
-    - If an active case exists: collect evidence / solve it.
-    - Else: try Intray; if none, pick a decent Reported Case and proceed.
+    - If an active case exists: collect evidence and solve it.
+    - If no active case, pick a Reported Case and proceed.
     """
-    import re, datetime, random, time
-    from selenium.webdriver.common.by import By
 
     print("\n--- Preparing Police Case ---")
 
-    # 1) Go to City → Police Current Case (keep your XPaths)
+    # Go to City page, then open the police menu, which displays the current case.
     if not _navigate_to_page_via_menu(
         "//span[@class='city']",
         "//a[normalize-space()='']//span[@class='police']",
-        "Police Current Case"
-    ):
+        "Police Current Case"):
         return False
 
-    # 2) If there's NO red fail box, we *do* have an active case
+    # Checks to see if there is a red box that says, "You don't currently have an assigned case...". If that box is not found, it means we have an active case.
     fail_box = _find_element(By.XPATH, "//div[@id='fail']")
     if not fail_box:
-        print("Active case detected. Proceeding to collect evidence / solve...")
+        print("Active case detected. Proceeding to collect evidence...")
         return solve_case(character_name)
 
-    # 3) Open Unassigned Cases
+    # Open Unassigned Cases
     print("No active case. Checking Unassigned Cases…")
     if not _find_and_click(By.XPATH, "//a[contains(@href, 'display=unassigned') and contains(., 'UNASSIGNED CASES')]"):
         print("FAILED: Could not open Unassigned Cases.")
         return False
 
-    # Respect the throttle + handle "no new cases"
+    # Respect the 30-second throttle and checks to see if there are new cases.
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     fail_box = _find_element(By.XPATH, "//div[@id='fail']", timeout=2, suppress_logging=True)
     if fail_box:
@@ -274,7 +215,7 @@ def prepare_police_cases(character_name):
             return True
         if "there are currently no new cases" in msg:
             mins = random.uniform(10, 15)
-            print(f"No new cases available — cool down for {mins:.1f} minutes.")
+            print(f"No new cases available — waiting for {mins:.1f} minutes.")
             global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
             return True
 
@@ -293,17 +234,23 @@ def prepare_police_cases(character_name):
             re.search(r"#e6(8|9)[0-9a-f]{3}", c) is not None
         )
 
-    # 4) Try Intray first — pick the first row with NO orange boxes
-    intray_rows = _find_elements(
-        By.XPATH,
-        "//table[contains(@style,'border-collapse')]//tr[td/input[@type='radio' and @name='case']]"
-    )
+    #Try Intray first — pick the first row with NO orange boxes
+    intray_rows = _find_elements(By.XPATH, "//table[contains(@style,'border-collapse')]//tr[td/input[@type='radio' and @name='case']]")
 
     if intray_rows:
         picked = None
         all_intray_orange = True
         for row in intray_rows:
             try:
+                # Ignore whacking cases entirely
+                if _is_whacking_row(row):
+                    try:
+                        _case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
+                    except Exception:
+                        _case_no = "?"
+                    print(f"Skipping WHACKING case #{_case_no}.")
+                    continue
+
                 w  = _cell_bg(row.find_element(By.XPATH, "./td[4]"))
                 d  = _cell_bg(row.find_element(By.XPATH, "./td[5]"))
                 fp = _cell_bg(row.find_element(By.XPATH, "./td[6]"))
@@ -311,7 +258,30 @@ def prepare_police_cases(character_name):
                 a  = _cell_bg(row.find_element(By.XPATH, "./td[8]"))
 
                 case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
-                print(f"INTRAY {case_no} -> W:{w} DNA:{d} FP:{fp} Fire:{f} Aut:{a}")
+                # Skip cases awaiting Forensics while Action > 0
+                digits = "".join(ch for ch in (case_no or "") if ch.isdigit())
+                case_id = int(digits) if digits else None
+
+                timers = getattr(global_vars, 'jail_timers', {}) or {}
+                action_remaining = float(timers.get('action_time_remaining', float('inf')))
+
+                data = _read_json_file(global_vars.COOLDOWN_FILE)
+                pending = set(data.get("_pending_forensics", []))
+
+                if case_id and (action_remaining > 0) and (case_id in pending):
+                    print(f"Skipping case #{case_id}, awaiting action timer to run forensics.")
+                    continue
+
+                # If we previously marked this case to wait for forensics, skip it while Action > 0
+                digits = "".join(ch for ch in case_no if ch.isdigit())
+                case_id = int(digits) if digits else None
+
+                timers = getattr(global_vars, 'jail_timers', {}) or {}
+                action_remaining = float(timers.get('action_time_remaining', float('inf')))
+
+                if case_id and (action_remaining > 0) and (case_id in global_vars._cases_pending_forensics):
+                    print(f"Skipping case #{case_id}, awaiting Action to run forensics.")
+                    continue
 
                 if any(_is_orange(x) for x in (w, d, fp, f, a)):
                     continue
@@ -323,7 +293,7 @@ def prepare_police_cases(character_name):
                 continue
 
         if picked:
-            # Open the intray case we selected
+            # Open the case we selected
             try:
                 picked.find_element(By.XPATH, ".//input[@type='radio' and @name='case']").click()
                 btn = _find_element(By.XPATH, "//input[@type='submit' and contains(@value,'Select Case')]")
@@ -333,7 +303,7 @@ def prepare_police_cases(character_name):
                     print("FAILED: 'Select Case' button not found.")
                     return False
             except Exception as e:
-                print(f"FAILED: Could not open the selected intray case row: {e}")
+                print(f"FAILED: Could not open the selected case row: {e}")
                 return False
 
             # Give the case page a moment to render
@@ -341,7 +311,7 @@ def prepare_police_cases(character_name):
 
             # Sanity check: ensure the case body exists before proceeding
             if not _case_body_html():
-                print("FAILED: Case view did not load after selecting intray row.")
+                print("FAILED: Case view did not load after selecting row.")
                 return False
 
             if _is_witness_only_case():
@@ -353,24 +323,20 @@ def prepare_police_cases(character_name):
 
         else:
             if all_intray_orange:
-                print("All intray cases have orange boxes — cooling down before re-check.")
+                print("All cases have orange boxes — waiting before re-check.")
                 mins = random.uniform(5, 7)
                 global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
                 return True
-            print("All intray cases have orange boxes — skipping intray and checking Reported Cases…")
 
-    # 5) Reported Cases: pick best row with NO orange; prefer green/yellow DNA/Prints
+    # Reported Cases: pick row with NO orange; prefer green/yellow
     if not _navigate_to_page_via_menu("//span[@class='police']",
                                       "//a[normalize-space()='Reported cases']",
                                       "Reported Cases"):
         return False
 
-    print("Scanning Reported Cases for eligible candidates (skip ORANGE)…")
+    print("Scanning Reported Cases for eligible cases (skip ORANGE)…")
 
-    rows = _find_elements(
-        By.XPATH,
-        "//table[contains(@style,'border-collapse')]/tbody/tr[td/input[@type='radio' and @name='case']]"
-    )
+    rows = _find_elements(By.XPATH, "//table[contains(@style,'border-collapse')]/tbody/tr[td/input[@type='radio' and @name='case']]")
 
     def _score_row(row):
         # returns (score, has_orange)
@@ -382,7 +348,7 @@ def prepare_police_cases(character_name):
 
         has_orange = any(_is_orange(x) for x in (w, d, fp, f, a))
 
-        # Prefer green, then yellow, on DNA/Prints
+        # Prefer green, then yellow
         score = 0
         for x in (d, fp):
             if "#4c8a23" in x or "rgb(76,138,35)" in x:   # green
@@ -394,6 +360,10 @@ def prepare_police_cases(character_name):
     best_row, best_score = None, -1
     for row in rows:
         try:
+            if _is_whacking_row(row):
+                print("Skipping WHACKING case.")
+                continue
+
             score, has_orange = _score_row(row)
             if has_orange:
                 continue
@@ -403,14 +373,14 @@ def prepare_police_cases(character_name):
             continue
 
     if best_row:
-        print(f"Eligible reported case chosen (score {best_score}). Opening…")
+        print(f"Eligible case chosen (score {best_score}). Opening…")
         try:
             best_row.find_element(By.XPATH, ".//input[@type='radio' and @name='case']").click()
             btn = _find_element(By.XPATH, "//input[@type='submit' and contains(@value,'Select Case')]")
             if btn:
                 btn.click()
         except Exception:
-            print("FAILED: Could not open the selected case row.")
+            print("FAILED: Could not open the selected case.")
             return False
 
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
@@ -425,12 +395,10 @@ def prepare_police_cases(character_name):
     print("No eligible reported cases found.")
     return False
 
-
 def _is_witness_only_case():
     """
     Returns True if the open case appears to be a witness case (no victim report yet).
-    Old code keyed off '<i>Not reported yet' in the case body.
-    We keep that signal and also prefer when there's a Witness Statement without a Victim Statement.
+    Identified by reading 'Not reported yet' in the case body.
     """
     h = _case_body_html()
     if not h:
@@ -443,15 +411,14 @@ def _is_witness_only_case():
         return True
     return False
 
-
 def collect_evidence():
     """
-    Ensure core evidence exists on the open case:
+    Ensure evidence exists on the open case:
     - If torch: ensure Fire Investigation exists
     - Ensure Fingerprints & DNA exist
-    - Ensure Travel is present
-    If DNA was just requested, set a short backoff and stop.
-    Then, if DNA/FP cells contain numbers, run them through Records database and come back to Intray.
+    - Ensure Travel evidence is present
+    If DNA was just requested, set a short timer and stop.
+    Then, if DNA/FP cells contain numbers, run them through the records database and come back to Intray.
     """
     print("\n--- Collecting Case Evidence ---")
     h = _case_body_html()
@@ -459,16 +426,16 @@ def collect_evidence():
         print("FAILED: Could not read case contents for evidence check.")
         return False
 
-    # Torch → Fire Investigation (only when the section exists and says 'None')
+    # for Torches, do Fire Investigations only when the section exists and says 'None'
     if _is_torch() and "Fire Investigation:" in h and "None" in h:
-        print("POLICE - FIRE INVESTIGATION REQUIRED")
+        print("FIRE INVESTIGATION REQUIRED")
         _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]")  # Fire investigation
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
     # Fingerprints — only dust if the value cell is blank
     fp_value = _get_case_cell("Fingerprint Evidence:")
     if not fp_value:
-        print("POLICE - FINGERPRINT EVIDENCE REQUIRED (cell blank)")
+        print("FINGERPRINT EVIDENCE REQUIRED")
         idx = 6 if _is_torch() else 5
         if _find_and_click(By.XPATH, f"//*[@id='pd']//div[@class='links']/input[{idx}]"):
             # Give the page a moment to populate the FP cell, then re-read it
@@ -480,12 +447,12 @@ def collect_evidence():
         else:
             print("FAILED: Could not click 'Dust for fingerprints'.")
     else:
-        print(f"POLICE - Fingerprint evidence present ({fp_value}). Skipping dusting.")
+        print(f"Fingerprint evidence present ({fp_value}). Skipping dusting.")
 
     # DNA — only swab if the value cell is completely blank
     dna_content = _get_case_cell("DNA Log:")
     if not dna_content:
-        print("POLICE - DNA cell blank → requesting swab now")
+        print("DNA EVIDENCE REQUIRED")
         idx = 7 if _is_torch() else 6
         if _find_and_click(By.XPATH, f"//*[@id='pd']//div[@class='links']/input[{idx}]"):
             # Give the page a moment to update, then re-read DNA Log
@@ -494,31 +461,31 @@ def collect_evidence():
             dna_after_l = dna_after.lower()
 
             if "awaiting results" in dna_after_l:
-                print("DNA sample taken; awaiting results — RETURN case for hospital processing.")
+                print("Awaiting DNA results - Returning case.")
                 _return_case()
                 return False
 
             elif dna_after.strip().lower() == "none" or not dna_after.strip():
-                print(f"DNA swab returned immediately as None — continuing (no wait).")
+                print(f"DNA returned immediately as None - continuing.")
                 dna_content = dna_after  # update so later logic sees the latest value
             else:
                 # Some other immediate text (rare), just log and continue
-                print(f"DNA log updated to: '{dna_after}'. Continuing without wait.")
+                print(f"DNA log updated to: '{dna_after}'.")
                 dna_content = dna_after  # update so later logic sees the latest value
 
         else:
-            print("FAILED: Could not click DNA swab button.")
+            print("FAILED: Could not click DNA button.")
     else:
-        print(f"POLICE - DNA already requested (cell content: {dna_content}). Skipping swab.")
+        print(f"DNA evidence already present {dna_content}). Skipping swab.")
 
     # Travel — only add if the value cell is blank
     # NOTE: "No valid travel evidence found." counts as PRESENT (do not click again)
     travel_value = _get_case_cell("Travel Log:")
     if not travel_value:
-        print("POLICE - TRAVEL EVIDENCE MISSING → adding travel evidence")
+        print("TRAVEL EVIDENCE REQUIRED")
         _enter_travel_evidence()
     else:
-        print(f"POLICE - Travel evidence present ({travel_value}). Skipping.")
+        print(f"Travel evidence present ({travel_value}). Skipping.")
 
     # --- Add results via Records database ONLY when numbers are present ---
     # "None" should NOT trigger DB search; blank cells were already handled above.
@@ -529,44 +496,42 @@ def collect_evidence():
     went_to_records_db = False  # <-- track if we visited the DB
 
     if dna_has_numbers:
-        print(f"DNA cell contains numbers ({dna_content}) → checking Records database…")
+        print(f"DNA present ({dna_content}). Checking Records Database…")
         if _records_database_add_if_results("DNA"):
             any_added = True
         went_to_records_db = True
     else:
         if dna_content:
-            print(f"DNA cell not numeric ('{dna_content}') → skipping Records database for DNA.")
+            print(f"DNA cell not numeric ({dna_content}). Skipping Records database for DNA.")
 
     if fp_has_numbers:
-        print(f"FP cell contains numbers ({fp_value}) → checking Records database…")
+        print(f"FingerPrint cell contains numbers ({fp_value}). Checking Records database…")
         if _records_database_add_if_results("Fingerprints"):
             any_added = True
         went_to_records_db = True
     else:
         if fp_value:
-            print(f"FP cell not numeric ('{fp_value}') → skipping Records database for FP.")
+            print(f"FingerPrint cell not numeric ('{fp_value}'). Skipping Records database for FringerPrints.")
 
     # Only navigate back to In-tray if we actually went to Records Database
     if went_to_records_db:
         if not _find_and_click(By.XPATH, "//a[normalize-space()='In-tray']"):
-            print("FAILED: Could not navigate back to 'In-tray'.")
+            print("FAILED: Could not navigate back to In-tray.")
             return False
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-    print("Evidence present (none missing).")
+    print("All evidence is present.")
     return True
 
 def _choose_name_ending(cues):
-    """Pick the longest reliable ending among victim/witness/fire/forensics."""
+    """Pick the most reliable suspect based on the last 3 digits from victim/witness/fire/DNA/forensics."""
     candidates = [cues.get("victim_statement"), cues.get("witness_statement"), cues.get("fire"), cues.get("forensics")]
     candidates = [c for c in candidates if c]
     return max(candidates, key=len) if candidates else None
 
-
 def _search_phonebook_by_ending(ending):
     """
-    Search the Phone Book page and return (alive_matches, dead_matches) for names
-    that END with `ending`. The page shows multiple sections:
+    Search the Phone Book page and return (alive_matches, dead_matches) for names that END with `ending`. The page shows multiple sections:
       - "You found the following people accounts in the phonebook:"  (alive)
       - "You found the following forum accounts in the phonebook:"    (ignore)
       - "You found the following people in the obituaries:"           (dead-on-same-page)
@@ -614,10 +579,8 @@ def _search_phonebook_by_ending(ending):
         print(f"Phonebook search failed: {e}")
         return alive, dead
 
-
-
 def _enter_suspect(name):
-    """Enter suspect into the input; bury if it’s actually you."""
+    """Enter suspect into the input field; bury if it’s you."""
     try:
         you = _get_element_text(By.XPATH, "//div[@id='nav_right']/div[normalize-space(text())='Name']/following-sibling::div[1]/a")
         if name and you and name.strip() == you.strip():
@@ -634,7 +597,6 @@ def _enter_suspect(name):
         print(f"Failed to enter suspect '{name}': {e}")
     return False
 
-
 def solve_case(character_name):
     """
     Solve the open case using:
@@ -645,33 +607,33 @@ def solve_case(character_name):
     print("\n--- Solving Case ---")
 
     if _is_witness_only_case():
-        print("POLICE - WITNESS-ONLY CASE: burying (pre-solve).")
+        print("WITNESS-ONLY CASE: burying.")
         _bury_case()
         return True
 
-    # 1) Ensure evidence actions are done first (dust/swab/travel + Records DB if needed)
+    # Ensure evidence actions are done first (dust/swab/travel + Records DB if needed)
     if not collect_evidence():
         print("Evidence pending (e.g., DNA). Will try again later.")
         return False
 
-    # 2) If DNA shows 'awaiting results', return for hospital processing
+    # If DNA shows 'awaiting results', return case for hospital processing
     dna_status = _get_case_cell("DNA Log:")
     if dna_status and "awaiting results" in dna_status.lower():
-        print("DNA sample taken; awaiting results — RETURN case for hospital processing.")
+        print("Awaiting DNA results - Returning case.")
         _return_case()
         return True
 
-    # If fire investigation hasn't produced a suspect, return the case
+    # If awaiting fire investigation results, return the case
     if _is_torch():
-        fire_cell = _get_case_cell("Fire Investigation:")  # may be "", "None", "identity: XYZ", or other text
+        fire_cell = _get_case_cell("Fire Investigation:")
         fire_text = (fire_cell or "").strip().lower()
         # treat as pending if: blank, "none", or doesn't include the word "identity"
         if not fire_text or fire_text == "none" or ("identity" not in fire_text):
-            print("Torch case: Fire Investigation pending — RETURN case until firefighters report back.")
+            print("Fire Investigation pending - Return case.")
             _return_case()
             return True
 
-    # 3) Parse cues AFTER evidence work
+    # Parse cues AFTER evidence work
     cues = _parse_case_for_signals()
     if not cues:
         print("Could not parse the case – returning for safety.")
@@ -680,7 +642,7 @@ def solve_case(character_name):
 
     suspect = cues.get("suspect")
 
-    # 4) If still no suspect, and there are no leads at all, bury instead of return
+    # If still no suspect, and there are no leads at all, bury instead of return
     if not suspect:
         dna_val = _get_case_cell("DNA Log:")
         fp_val  = _get_case_cell("Fingerprint Evidence:")
@@ -701,7 +663,7 @@ def solve_case(character_name):
             if infer:
                 print(f"911 cache identified suspect: {infer}")
                 if not _enter_suspect(infer):
-                    print("Failed to enter 911-resolved suspect; returning the case.")
+                    print("Failed to enter 911 suspect; returning the case.")
                     _return_case()
                     return True
 
@@ -726,16 +688,65 @@ def solve_case(character_name):
                 send_discord_notification(f"Closed via 911: {cues.get('agg_time') or _get_case_cell('Time of Crime:')} | "f"{cues.get('victim') or _get_case_cell('Victim:')} → **{infer}**")
                 return True
 
-            # Cache gave nothing → proceed to bury
-            print("No evidence or name cues – BURY case.")
-            _bury_case()
-            return True
+            # Cache gave nothing → Forensics flow if enabled
+            cfg = configparser.ConfigParser()
+            cfg.read('settings.ini')
+            if cfg.getboolean('Police', 'DoForensics', fallback=False):
+                # Use timers fetched in Main (no scraping here)
+                timers = getattr(global_vars, 'jail_timers', {}) or {}
+                action_remaining = float(timers.get('action_time_remaining', float('inf')))
 
-    # 5) Fallback: phonebook via name ending, then close/return/bury as before
+                if action_remaining and action_remaining > 0:
+                    # Mark this case to the database so we skip until Action is ready
+                    cid = _get_current_case_id()
+                    if cid:
+                        data = _read_json_file(global_vars.COOLDOWN_FILE)
+                        pf = set(data.get("_pending_forensics", []))
+                        pf.add(cid)
+                        data["_pending_forensics"] = sorted(pf)
+                        _write_json_file(global_vars.COOLDOWN_FILE, data)
+                        print(f"FORENSICS: Action not ready; marking case #{cid} to skip until Action=0.")
+
+                    _return_case()
+                    return True
+
+                print("No evidence or name cues, Requesting Forensics.")
+                if _request_forensics_via_duties():
+                    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    # Since we requested forensics, unmark this case id (if present)
+                    cid = _get_current_case_id()
+                    if cid:
+                        data = _read_json_file(global_vars.COOLDOWN_FILE)
+                        pf = set(data.get("_pending_forensics", []))
+                        if cid in pf:
+                            pf.remove(cid)
+                            data["_pending_forensics"] = sorted(pf)
+                            _write_json_file(global_vars.COOLDOWN_FILE, data)
+
+                    # since we requested forensics, unskip this id (if present)
+                    cid = _get_current_case_id()
+                    if cid and cid in global_vars._cases_pending_forensics:
+                        global_vars._cases_pending_forensics.discard(cid)
+
+                    # Re-parse case so forensics ending is available, then fall through to existing fallback
+                    cues = _parse_case_for_signals() or {}
+                    suspect = cues.get("suspect")
+                else:
+                    print("Forensics request navigation failed — RETURN case and retry later.")
+                    _return_case()
+                    return True
+            else:
+                print("No evidence or name cues – BURY case.")
+                _bury_case()
+                return True
+
+    # Fallback: phonebook via name ending, then close/return/bury as before
     if not suspect:
         ending = _choose_name_ending(cues)
         if ending:
-            ending = ending.strip()[-3:] if hasattr(ending, "strip") else str(ending)[-3:]
+            # Remove punctuation like "!" from the end
+            ending = re.sub(r'[^\w]+$', '', ending.strip())  # strip non-alphanumeric from end
+            ending = ending[-3:]  # last 3 characters only
 
         # Minimum 2 characters required for phone book search
         if ending and len(ending.strip()) == 1:
@@ -761,15 +772,15 @@ def solve_case(character_name):
                     return True
 
                 if not _close_case():
-                    print("Close failed after 911 suspect; bury as fallback.")
+                    print("Closing case failed after finding 911 suspect; bury case.")
                     _bury_case()
                     return True
 
-                print("Case closed successfully (via 911 cache from 1-letter hint).")
+                print("Case closed successfully (via 911 cache.")
                 send_discord_notification(f"Closed via 911: {cues.get('agg_time') or _get_case_cell('Time of Crime:')} | "f"{cues.get('victim') or _get_case_cell('Victim:')} → **{infer}**")
                 return True
 
-            print("911 cache gave nothing. 1-letter clue is unusable → BURY.")
+            print("911 cache gave nothing. BURY.")
             _bury_case()
             return True
 
@@ -793,20 +804,20 @@ def solve_case(character_name):
                 if len(narrowed) == 1:
                     suspect = narrowed[0]
             elif len(alive_matches) > 1:
-                print("Multiple alive phonebook matches – BURY case.")
+                print("Multiple phonebook matches – BURY case.")
                 _bury_case()
                 return True
             else:
-                # No alive → check dead section
+                # No alive suspects, check the dead section.
                 if len(dead_matches) > 1:
-                    print("Multiple obituary matches (phonebook bottom) – BURY case.")
+                    print("Multiple obituary matches – BURY case.")
                     _bury_case()
                     return True
                 elif len(dead_matches) == 1:
                     suspect = dead_matches[0]
 
     if not suspect:
-        # Try 911 cache here too before giving up
+        # Try 911 cache before giving up
         infer = _try_infer_suspect_from_911(cues)
         if infer:
             print(f"911 cache identified suspect: {infer}")
@@ -855,13 +866,12 @@ def solve_case(character_name):
         return True
 
     if not _close_case():
-        print("Close failed; bury as fallback.")
+        print("Closing case failed; bury.")
         _bury_case()
         return True
 
     print("Case closed successfully.")
     return True
-
 
 def _parse_case_for_signals():
     """
@@ -955,24 +965,42 @@ def _parse_case_for_signals():
 
     return data
 
-
-
 # -------------------------
 # Evidence & solving helpers
 # -------------------------
 
 def _close_case():
-    print("POLICE - CLOSE CASE")
+    print("Closing case")
+    # Cleanup pending-forensics list
+    try:
+        cid = _get_current_case_id()
+        if cid:
+            pf = set(_read_json_file(global_vars.PENDING_FORENSICS_FILE) or [])
+            if cid in pf:
+                pf.remove(cid)
+                _write_json_file(global_vars.PENDING_FORENSICS_FILE, sorted(pf))
+    except Exception as e:
+        print(f"WARNING: Could not remove case from pending-forensics list: {e}")
+
     return _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[1]")  # Close
 
-
 def _bury_case():
-    print("POLICE - BURY CASE")
+    print("Burying case")
+    # Cleanup pending-forensics list
+    try:
+        cid = _get_current_case_id()
+        if cid:
+            pf = set(_read_json_file(global_vars.PENDING_FORENSICS_FILE) or [])
+            if cid in pf:
+                pf.remove(cid)
+                _write_json_file(global_vars.PENDING_FORENSICS_FILE, sorted(pf))
+    except Exception as e:
+        print(f"WARNING: Could not remove case from pending-forensics list: {e}")
+
     return _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[2]")  # Bury
 
-
 def _return_case():
-    print("POLICE - RETURN CASE")
+    print("Returning case")
     result = _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[3]")  # Return
     if result:
         wait_s = random.uniform(30, 39)
@@ -980,17 +1008,15 @@ def _return_case():
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_s)
     return result
 
-
-
 def _update_case(is_torch: bool):
-    print("POLICE - UPDATE CASE")
+    print("updated case")
     # Torch uses a different button index in this menu vs other aggs
     idx = 8 if is_torch else 7
     return _find_and_click(By.XPATH, f"//*[@id='pd']//div[@class='links']/input[{idx}]")
 
 
 def _enter_travel_evidence():
-    print("POLICE - ADD TRAVEL EVIDENCE")
+    print("Adding travel evidence")
     if not _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[4]"):
         print("FAILED: Travel Evidence open")
         return False
@@ -998,20 +1024,17 @@ def _enter_travel_evidence():
         print("FAILED: Travel - 'no evidence'")
         return False
     if not _find_and_click(By.XPATH, "//*[@id='pd']/div[@class='body']/p[3]/input[@class='submit']"):
-        print("FAILED: Travel submit")
+        print("FAILED to click the Travel submit button")
         return False
     return True
-
 
 def _case_body_html():
     elem = _find_element(By.XPATH, "//*[@id='content']/div[@id='pd']/div[@id='shop_holder']/div[@id='holder_content']/div[@class='body']")
     return elem.get_attribute("innerHTML") if elem else None
 
-
 def _is_torch():
     h = _case_body_html()
     return bool(h and ("BIZ TORCH" in h or "Torch" in h))
-
 
 def _has_section(label):
     h = _case_body_html()
@@ -1039,7 +1062,6 @@ def _get_case_cell(label_text: str) -> str:
     # Strip tags & whitespace
     val = re.sub(r"<[^>]+>", "", m.group(1))
     return val.strip()
-
 
 def _records_database_add_if_results(kind: str) -> bool:
     """
@@ -1075,7 +1097,7 @@ def _records_database_add_if_results(kind: str) -> bool:
             if not _find_and_click(By.XPATH, "//input[@name='B1']"):
                 fail_box = _find_element(By.XPATH, "//div[@id='fail']", timeout=2, suppress_logging=True)
                 msg = (fail_box.text.strip() if fail_box and fail_box.text else "no fail message")
-                print(f"RECORDS DB: DNA had no addable results ({msg}).")
+                print(f"RECORDS DB: DNA had no useful results ({msg}).")
                 return False
 
         print("RECORDS DB: DNA added to case.")
@@ -1093,16 +1115,15 @@ def _records_database_add_if_results(kind: str) -> bool:
             if not _find_and_click(By.XPATH, "//input[@name='B1']"):
                 fail_box = _find_element(By.XPATH, "//div[@id='fail']", timeout=2, suppress_logging=True)
                 msg = (fail_box.text.strip() if fail_box and fail_box.text else "no fail message")
-                print(f"RECORDS DB: Fingerprints had no addable results ({msg}).")
+                print(f"RECORDS DB: Fingerprints had no useful results ({msg}).")
                 return False
 
         print("RECORDS DB: Fingerprints added to case.")
         return True
 
     else:
-        print(f"RECORDS DB: Unknown kind '{kind}'. Expected 'DNA' or 'Fingerprints'.")
+        print(f"RECORDS DB: Unknown result '{kind}'. Expected 'DNA' or 'Fingerprints'.")
         return False
-
 
 def _append_911_cache(new_rows: list):
     """Merge new 911 rows into a local JSON cache (dedupe by time+crime+victim+suspect)."""
@@ -1140,7 +1161,6 @@ def _append_911_cache(new_rows: list):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
-
 def _parse_online_usernames(block: str) -> list[str]:
     """Convert raw pasted online list text into a clean username list."""
     if not block:
@@ -1164,6 +1184,22 @@ def _parse_online_usernames(block: str) -> list[str]:
             seen.add(k)
             out.append(u)
     return out
+
+def _is_whacking_row(row):
+    """True if the row's type/description looks like a whacking case."""
+    try:
+        # Try likely "type" columns first (2 or 3), then fall back to the whole row text.
+        for idx in (2, 3):
+            try:
+                t = (row.find_element(By.XPATH, f"./td[{idx}]").text or "").lower()
+                if "whack" in t:  # matches 'whack', 'whacking', etc.
+                    return True
+            except Exception:
+                pass
+        t = (row.get_attribute("innerText") or "").lower()
+        return "whack" in t
+    except Exception:
+        return False
 
 def _try_infer_suspect_from_911(cues) -> str | None:
     """
@@ -1209,7 +1245,7 @@ def _try_infer_suspect_from_911(cues) -> str | None:
 
         return None
     except Exception as e:
-        print(f"911 infer failed: {e}")
+        print(f"911 cache check failed: {e}")
         return None
 
 def train_forensics():
@@ -1219,6 +1255,12 @@ def train_forensics():
     - If no success message, treat as first-time setup: select 'Forensics' and submit once.
     Returns True if training progressed or setup succeeded; False when training is complete or on failure.
     """
+
+    # Skip if already marked complete in game_data
+    if _read_json_file(global_vars.FORENSICS_TRAINING_DONE_FILE) is True:
+        print("Forensics training already marked complete — skipping.")
+        return False
+
     print("\n--- Police Training: Forensics ---")
 
     # Ensure we're on the City page (Police menu not visible from everywhere)
@@ -1230,8 +1272,7 @@ def train_forensics():
     if not _navigate_to_page_via_menu(
         "//a[normalize-space()='']//span[@class='police']",
         "//a[normalize-space()='Training']",
-        "Police - Training"
-    ):
+        "Police - Training"):
         return False
 
     # Subsequent path: look for success message first
@@ -1242,13 +1283,21 @@ def train_forensics():
 
     if msg:
         print(f"TRAINING MESSAGE: {msg}")
+        # If the banner contains "successfully", treat as completed and update the JSON as complete.
+        if "successfully" in msg.lower():
+            _write_json_file(global_vars.FORENSICS_TRAINING_DONE_FILE, True)
+            print("Detected 'successfully' banner — recorded Forensics training complete.")
+            return False
+
         m = re.search(r"\((\d+)\s+of\s+(\d+)\s+studies\)", msg, flags=re.I)
         if m:
             current = int(m.group(1))
             total = int(m.group(2))
             if current >= total:
                 print("Training complete — reached final study count. Stopping further training.")
+                _write_json_file(global_vars.FORENSICS_TRAINING_DONE_FILE, True)
                 return False
+
             print(f"Training progress: {current}/{total}. {total - current} to go.")
             return True
         else:
@@ -1278,7 +1327,69 @@ def train_forensics():
     msg = _get_element_text(By.XPATH, success_xpath, timeout=3) or ""
     if msg.strip():
         print(f"TRAINING MESSAGE: {msg.strip()}")
+        if "successfully" in msg.lower():
+            _write_json_file(global_vars.FORENSICS_TRAINING_DONE_FILE, True)
+            print("Detected 'successfully' banner after initial submit — recorded Forensics training complete.")
+            return False
+
     else:
         print("NOTE: No success message found after initial setup submit (may be transient).")
 
     return True
+
+def _request_forensics_via_duties():
+    """
+    Navigate: Income -> Police Duties -> select 'forensics' -> Submit.
+    Returns True on success, False otherwise.
+    """
+    try:
+        # Remember where we started so we can return
+        start_url = global_vars.driver.current_url
+
+        # Income menu, then Police Duties submenu
+        if not _navigate_to_page_via_menu(
+            "//span[@class='income']",
+            "//a[normalize-space()='Police Duties']",
+            "Police Duties"):
+            print("FAILED: Could not reach Police Duties.")
+            return False
+
+        # Select the 'forensics' duty radio
+        if not _find_and_click(By.XPATH, "//input[@value='forensics']"):
+            print("FAILED: Could not select Forensics radio button.")
+            return False
+
+        # Submit
+        if not _find_and_click(By.XPATH, "//input[@value='Submit']"):
+            print("FAILED: Could not click submit button for Forensics.")
+            return False
+
+        print("Forensics requested via Police Duties.")
+
+        # Return to the open case
+        try:
+            global_vars.driver.get(start_url)
+            print("Returned to previous page after requesting forensics.")
+        except Exception as e:
+            print(f"WARNING: Could not return to original page: {e}")
+
+        return True
+
+    except Exception as e:
+        print(f"ERROR requesting Forensics: {e}")
+        return False
+
+def _get_current_case_id():
+    """
+    Reads the Case number from the Current Case page. Returns int or None.
+    """
+    try:
+        cell = _find_element(By.XPATH, "//td[normalize-space()='Case:']/following-sibling::td[1]")
+        if not cell:
+            return None
+        txt = (cell.text or "").strip()   # e.g. "#609658"
+        digits = "".join(ch for ch in txt if ch.isdigit())
+        return int(digits) if digits else None
+    except Exception:
+        return None
+
