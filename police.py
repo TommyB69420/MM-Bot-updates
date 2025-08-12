@@ -9,6 +9,8 @@ from selenium.webdriver.common.keys import Keys
 from comms_journals import send_discord_notification
 from database_functions import _set_last_timestamp, _read_json_file, _write_json_file
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, _find_and_send_keys, _get_element_text, _select_dropdown_option
+from timer_functions import parse_game_datetime
+
 
 def schedule_next_911_check(min_m: float = 20, max_m: float = 25, ret: bool = False):
     next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_m, max_m))
@@ -529,12 +531,11 @@ def _choose_name_ending(cues):
     candidates = [c for c in candidates if c]
     return max(candidates, key=len) if candidates else None
 
-def _search_phonebook_by_ending(ending):
+def _search_phonebook_by_ending(ending, crime_time_str: str | None = None):
     """
-    Search the Phone Book page and return (alive_matches, dead_matches) for names that END with `ending`. The page shows multiple sections:
-      - "You found the following people accounts in the phonebook:"  (alive)
-      - "You found the following forum accounts in the phonebook:"    (ignore)
-      - "You found the following people in the obituaries:"           (dead-on-same-page)
+    Search the Phone Book page and return (alive_matches, dead_matches) for names that END with `ending`.
+    If `crime_time_str` is provided and there are multiple alive matches, open each profile and keep only
+    those whose 'Last online' is AFTER the Time of Crime.
     """
     alive, dead = [], []
     try:
@@ -544,22 +545,25 @@ def _search_phonebook_by_ending(ending):
         if not _find_and_click(By.XPATH, "//*[@class='business phone_book']"):
             return alive, dead
 
-        _find_and_send_keys(By.XPATH, "//*[@id='AutoNumber4']/tbody/tr[5]/td[@class='s1'][2]/p/input", ending)
-        if not _find_and_click(By.XPATH, "//*[@id='AutoNumber4']/tbody/tr[7]/td[@class='s1'][2]/p/input"):
+        _find_and_send_keys(
+            By.XPATH,
+            "//*[@id='AutoNumber4']/tbody/tr[5]/td[@class='s1'][2]/p/input",
+            ending
+        )
+        if not _find_and_click(
+            By.XPATH,
+            "//*[@id='AutoNumber4']/tbody/tr[7]/td[@class='s1'][2]/p/input"
+        ):
             return alive, dead
 
-        # The phonebook renders multiple repeated blocks:
-        # <div id='holder_top'><h1>...</h1></div>
-        # <div id='holder_content'> ...names... </div>
+        # Collect alive/dead lists from the results blocks
         headings = _find_elements(By.XPATH, "//div[@id='holder_top']/h1")
         for h1 in headings or []:
             title = (h1.text or "").lower()
-
-            # get the *next* holder_content for this heading
-            content = h1.find_element(By.XPATH, "../following-sibling::div[@id='holder_content'][1]")
+            content = h1.find_element(
+                By.XPATH, "../following-sibling::div[@id='holder_content'][1]"
+            )
             html = content.get_attribute("innerHTML") or ""
-
-            # extract usernames and filter by ending
             names = re.findall(r'username=([^"&<]+)"', html)
             names = [n for n in names if n.endswith(ending)]
 
@@ -570,6 +574,48 @@ def _search_phonebook_by_ending(ending):
             else:
                 # forum accounts or anything else → ignore
                 pass
+
+        # If we have multiple alive matches AND a crime time, narrow by 'Last online'
+        if crime_time_str and len(alive) > 1:
+            crime_dt = parse_game_datetime(crime_time_str)
+            if crime_dt:
+                print(f"Narrowing {len(alive)} alive matches by Last online > Time of Crime ({crime_time_str})")
+                filtered = []
+                for name in alive:
+                    # open the profile link from the results
+                    if _find_and_click(By.XPATH, f"//a[contains(@href, 'username={name}')]"):
+                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                        # Read Last online or Last activity (handles both labels)
+                        last_txt = _get_element_text(
+                            By.XPATH,
+                            "//td[@class='title' and (contains(normalize-space(),'Last online') or contains(normalize-space(),'Last activity'))]"
+                            "/following-sibling::td[1]"
+                        ) or ""
+
+                        # If it says "minute" (e.g., "less than a minute ago", "5 minutes ago"), treat as online now (i.e., clearly AFTER the crime time).
+                        text_lower = last_txt.lower()
+                        if "minute" in text_lower:
+                            last_dt = datetime.datetime.now()
+                        else:
+                            last_dt = parse_game_datetime(last_txt)
+
+                        if last_dt and last_dt > crime_dt:
+                            filtered.append(name)
+                            print(f"Keeping {name} (Last online {last_txt})")
+                        else:
+                            print(f"Excluding {name} (Last online {last_txt or 'unreadable'})")
+
+                        # go back to the search results and continue
+                        try:
+                            global_vars.driver.back()
+                            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                        except Exception:
+                            pass
+                    else:
+                        # Couldn't open profile — keep as candidate (fail-safe)
+                        print(f"Could not open profile for {name}; keeping as candidate.")
+                        filtered.append(name)
+                alive = filtered
 
         # back to Police
         _find_and_click(By.XPATH, "//span[@class='police']")
@@ -791,7 +837,8 @@ def solve_case(character_name):
             return True
 
         if ending:
-            alive_matches, dead_matches = _search_phonebook_by_ending(ending)
+            crime_time = _get_case_cell("Time of Crime:")
+            alive_matches, dead_matches = _search_phonebook_by_ending(ending, crime_time)
             print(f"PHONEBOOK ALIVE MATCHES ({ending}): {alive_matches}")
             print(f"PHONEBOOK OBITUARY MATCHES ({ending}): {dead_matches}")
 
