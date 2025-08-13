@@ -181,7 +181,7 @@ def prepare_police_cases(character_name):
     """
     Main police case runner:
     - If an active case exists: collect evidence and solve it.
-    - If no active case, pick a Reported Case and proceed.
+    - If no active case, try In-tray first (skip any orange/waiting cells); else pick a Reported Case.
     """
 
     print("\n--- Preparing Police Case ---")
@@ -193,7 +193,7 @@ def prepare_police_cases(character_name):
         "Police Current Case"):
         return False
 
-    # Checks to see if there is a red box that says, "You don't currently have an assigned case...". If that box is not found, it means we have an active case.
+    # If the red box is absent -> we DO have an active case.
     fail_box = _find_element(By.XPATH, "//div[@id='fail']")
     if not fail_box:
         print("Active case detected. Proceeding to collect evidence...")
@@ -205,7 +205,7 @@ def prepare_police_cases(character_name):
         print("FAILED: Could not open Unassigned Cases.")
         return False
 
-    # Respect the 30-second throttle and checks to see if there are new cases.
+    # Respect the 30-second throttle and check common banners
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     fail_box = _find_element(By.XPATH, "//div[@id='fail']", timeout=2, suppress_logging=True)
     if fail_box:
@@ -221,22 +221,20 @@ def prepare_police_cases(character_name):
             global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
             return True
 
-    # Helpers for color parsing
+    # Helpers (function-scope, not inside the loop)
     def _cell_bg(td):
         style = (td.get_attribute("style") or "").lower()
         m = re.search(r"background(?:-color)?:\s*([^;]+)", style)
         return (m.group(1).strip() if m else "").lower().replace(" ", "")
 
-    def _is_orange(c: str):
-        # Cover "orange" keyword, rgb, and nearby hexes (#e68f12, #e69a0c, etc.)
-        c = (c or "")
-        return (
-            "orange" in c or
-            "rgb(230,143,18)" in c or
-            re.search(r"#e6(8|9)[0-9a-f]{3}", c) is not None
-        )
+    def _is_orange(c: str) -> bool:
+        # The tray's "waiting" shade (fixed)
+        c = (c or "").lower().replace(" ", "")
+        return ("#e68f12" in c) or ("rgb(230,143,18)" in c)
 
-    # Try Intray first — pick the first row with NO orange boxes
+    # -----------------
+    # In-tray selection
+    # -----------------
     intray_rows = _find_elements(
         By.XPATH,
         "//table[contains(@style,'border-collapse')]"
@@ -251,43 +249,30 @@ def prepare_police_cases(character_name):
 
         for row in intray_rows:
             try:
-                # Ignore whacking cases entirely
+                # Skip whacking rows entirely
                 if _is_whacking_row(row):
                     skipped_whack += 1
                     continue
 
-                # ---- Read colors: computed CSS first, then inline style fallback
-                def _bg(idx: int) -> str:
+                # Safely read color cells (W, DNA, FP, Fire, Autopsy = td[4..8])
+                def _bg_idx(idx: int) -> str:
                     try:
-                        td = row.find_element(By.XPATH, f"./td[{idx}]")
-                        try:
-                            v = (td.value_of_css_property("background-color") or "").lower().replace(" ", "")
-                            if v:
-                                return v
-                        except Exception:
-                            pass
-                        style = (td.get_attribute("style") or "").lower()
-                        m = re.search(r"background(?:-color)?:\s*([^;]+)", style)
-                        return (m.group(1).strip() if m else "").lower().replace(" ", "")
+                        return _cell_bg(row.find_element(By.XPATH, f"./td[{idx}]"))
                     except Exception:
                         return ""
 
-                w  = _bg(4); d = _bg(5); fp = _bg(6); f = _bg(7); a = _bg(8)
+                w  = _bg_idx(4)
+                d  = _bg_idx(5)
+                fp = _bg_idx(6)
+                f  = _bg_idx(7)
+                a  = _bg_idx(8)
 
-                # Orange/yellow = truly "pending" shades
-                def _is_orange(c: str) -> bool:
-                    c = (c or "")
-                    return (
-                        "orange" in c or
-                        "#e68f12" in c or "#e69a0c" in c or
-                        "rgb(230,143,18)" in c or "rgb(230,154,12)" in c
-                    )
-
-                # Only accept rows with no orange anywhere
-                if not any(_is_orange(x) for x in (w, d, fp, f, a)):
+                # Only accept rows with NO orange anywhere
+                has_orange = any(_is_orange(x) for x in (w, d, fp, f, a))
+                if not has_orange:
                     any_non_orange_seen = True
 
-                    # Skip if marked 'pending forensics' AND Action > 0
+                    # Skip if this case is marked pending-forensics AND Action>0
                     case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
                     digits = "".join(ch for ch in case_no if ch.isdigit())
                     case_id = int(digits) if digits else None
@@ -297,7 +282,7 @@ def prepare_police_cases(character_name):
 
                     raw = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
                     if isinstance(raw, dict):
-                        pending_file = set(raw.get("_pending_forensics", []))
+                        pending_file = set(raw.get("_pending_forensics", []))  # tolerant if you ever migrate format
                     elif isinstance(raw, list):
                         pending_file = set(raw)
                     else:
@@ -316,7 +301,7 @@ def prepare_police_cases(character_name):
                 continue
 
         if picked:
-            # Open the case we selected
+            # Open selected case
             try:
                 picked.find_element(
                     By.XPATH, ".//input[@type='radio' and (@name='case' or contains(@name,'case'))]"
@@ -347,7 +332,7 @@ def prepare_police_cases(character_name):
 
             return solve_case(character_name)
 
-        # No pick — clarify why
+        # Nothing picked — explain why and back off
         if any_non_orange_seen:
             print(f"No orange-free cases were eligible (whack skips: {skipped_whack}, awaiting Action/forensics: {skipped_forensics}). Waiting before re-check.")
         else:
@@ -357,8 +342,9 @@ def prepare_police_cases(character_name):
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
         return True
 
-
-    # Reported Cases: pick row with NO orange; prefer green/yellow
+    # -----------------------
+    # Reported Cases fallback
+    # -----------------------
     if not _navigate_to_page_via_menu("//span[@class='police']",
                                       "//a[normalize-space()='Reported cases']",
                                       "Reported Cases"):
@@ -375,13 +361,12 @@ def prepare_police_cases(character_name):
         fp = _cell_bg(row.find_element(By.XPATH, "./td[6]"))
         f  = _cell_bg(row.find_element(By.XPATH, "./td[7]"))
         a  = _cell_bg(row.find_element(By.XPATH, "./td[8]"))
-
         has_orange = any(_is_orange(x) for x in (w, d, fp, f, a))
 
         # Prefer green, then yellow
         score = 0
         for x in (d, fp):
-            if "#4c8a23" in x or "rgb(76,138,35)" in x:   # green
+            if "#4c8a23" in x or "rgb(76,138,35)" in x:     # green
                 score += 2
             elif "#e8d71d" in x or "rgb(232,215,29)" in x:  # yellow
                 score += 1
