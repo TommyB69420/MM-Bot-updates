@@ -227,7 +227,7 @@ def prepare_police_cases(character_name):
         m = re.search(r"background(?:-color)?:\s*([^;]+)", style)
         return (m.group(1).strip() if m else "").lower().replace(" ", "")
 
-    def _is_orange(c: str) -> bool:
+    def _is_orange(c: str):
         # Cover "orange" keyword, rgb, and nearby hexes (#e68f12, #e69a0c, etc.)
         c = (c or "")
         return (
@@ -236,82 +236,106 @@ def prepare_police_cases(character_name):
             re.search(r"#e6(8|9)[0-9a-f]{3}", c) is not None
         )
 
-    #Try Intray first — pick the first row with NO orange boxes
-    intray_rows = _find_elements(By.XPATH, "//table[contains(@style,'border-collapse')]//tr[td/input[@type='radio' and @name='case']]")
+    # Try Intray first — pick the first row with NO orange boxes
+    intray_rows = _find_elements(
+        By.XPATH,
+        "//table[contains(@style,'border-collapse')]"
+        "//tr[.//input[@type='radio' and (@name='case' or contains(@name,'case'))]]"
+    )
 
     if intray_rows:
         picked = None
-        all_intray_orange = True
+        any_non_orange_seen = False
+        skipped_whack = 0
+        skipped_forensics = 0
+
         for row in intray_rows:
             try:
                 # Ignore whacking cases entirely
                 if _is_whacking_row(row):
+                    skipped_whack += 1
+                    continue
+
+                # ---- Read colors: computed CSS first, then inline style fallback
+                def _bg(idx: int) -> str:
                     try:
-                        _case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
+                        td = row.find_element(By.XPATH, f"./td[{idx}]")
+                        try:
+                            v = (td.value_of_css_property("background-color") or "").lower().replace(" ", "")
+                            if v:
+                                return v
+                        except Exception:
+                            pass
+                        style = (td.get_attribute("style") or "").lower()
+                        m = re.search(r"background(?:-color)?:\s*([^;]+)", style)
+                        return (m.group(1).strip() if m else "").lower().replace(" ", "")
                     except Exception:
-                        _case_no = "?"
-                    print(f"Skipping WHACKING case #{_case_no}.")
-                    continue
+                        return ""
 
-                w  = _cell_bg(row.find_element(By.XPATH, "./td[4]"))
-                d  = _cell_bg(row.find_element(By.XPATH, "./td[5]"))
-                fp = _cell_bg(row.find_element(By.XPATH, "./td[6]"))
-                f  = _cell_bg(row.find_element(By.XPATH, "./td[7]"))
-                a  = _cell_bg(row.find_element(By.XPATH, "./td[8]"))
+                w  = _bg(4); d = _bg(5); fp = _bg(6); f = _bg(7); a = _bg(8)
 
-                case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
-                # Skip cases awaiting Forensics while Action > 0
-                digits = "".join(ch for ch in (case_no or "") if ch.isdigit())
-                case_id = int(digits) if digits else None
+                # Orange/yellow = truly "pending" shades
+                def _is_orange(c: str) -> bool:
+                    c = (c or "")
+                    return (
+                        "orange" in c or
+                        "#e68f12" in c or "#e69a0c" in c or
+                        "rgb(230,143,18)" in c or "rgb(230,154,12)" in c
+                    )
 
-                timers = getattr(global_vars, 'jail_timers', {}) or {}
-                action_remaining = float(timers.get('action_time_remaining', float('inf')))
+                # Only accept rows with no orange anywhere
+                if not any(_is_orange(x) for x in (w, d, fp, f, a)):
+                    any_non_orange_seen = True
 
-                data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
-                pending = set(data.get("_pending_forensics", []))
+                    # Skip if marked 'pending forensics' AND Action > 0
+                    case_no = (row.find_element(By.XPATH, "./td[1]").text or "").strip()
+                    digits = "".join(ch for ch in case_no if ch.isdigit())
+                    case_id = int(digits) if digits else None
 
-                if case_id and (action_remaining > 0) and (case_id in pending):
-                    print(f"Skipping case #{case_id}, awaiting action timer to run forensics.")
-                    continue
+                    timers = getattr(global_vars, 'jail_timers', {}) or {}
+                    action_remaining = float(timers.get('action_time_remaining', 0) or 0)
 
-                # If we previously marked this case to wait for forensics, skip it while Action > 0
-                digits = "".join(ch for ch in case_no if ch.isdigit())
-                case_id = int(digits) if digits else None
+                    raw = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
+                    if isinstance(raw, dict):
+                        pending_file = set(raw.get("_pending_forensics", []))
+                    elif isinstance(raw, list):
+                        pending_file = set(raw)
+                    else:
+                        pending_file = set()
+                    pending_mem = set(getattr(global_vars, "_cases_pending_forensics", set()) or [])
 
-                timers = getattr(global_vars, 'jail_timers', {}) or {}
-                action_remaining = float(timers.get('action_time_remaining', float('inf')))
+                    if case_id and action_remaining > 0 and (case_id in (pending_file | pending_mem)):
+                        skipped_forensics += 1
+                        continue
 
-                if case_id and (action_remaining > 0) and (case_id in global_vars._cases_pending_forensics):
-                    print(f"Skipping case #{case_id}, awaiting Action to run forensics.")
-                    continue
+                    picked = row
+                    break
 
-                if any(_is_orange(x) for x in (w, d, fp, f, a)):
-                    continue
-
-                all_intray_orange = False
-                picked = row
-                break
             except Exception:
+                # If anything odd happens on this row, just move on
                 continue
 
         if picked:
             # Open the case we selected
             try:
-                picked.find_element(By.XPATH, ".//input[@type='radio' and @name='case']").click()
-                btn = _find_element(By.XPATH, "//input[@type='submit' and contains(@value,'Select Case')]")
+                picked.find_element(
+                    By.XPATH, ".//input[@type='radio' and (@name='case' or contains(@name,'case'))]"
+                ).click()
+                btn = _find_element(
+                    By.XPATH,
+                    "//input[@type='submit' and (contains(@value,'Select Case') or normalize-space(@value)='Select')]"
+                )
                 if btn:
                     btn.click()
                 else:
-                    print("FAILED: 'Select Case' button not found.")
+                    print("FAILED: Could not find 'Select' button.")
                     return False
             except Exception as e:
                 print(f"FAILED: Could not open the selected case row: {e}")
                 return False
 
-            # Give the case page a moment to render
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-            # Sanity check: ensure the case body exists before proceeding
             if not _case_body_html():
                 print("FAILED: Case view did not load after selecting row.")
                 return False
@@ -323,12 +347,16 @@ def prepare_police_cases(character_name):
 
             return solve_case(character_name)
 
+        # No pick — clarify why
+        if any_non_orange_seen:
+            print(f"No orange-free cases were eligible (whack skips: {skipped_whack}, awaiting Action/forensics: {skipped_forensics}). Waiting before re-check.")
         else:
-            if all_intray_orange:
-                print("All cases have orange boxes — waiting before re-check.")
-                mins = random.uniform(5, 7)
-                global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
-                return True
+            print("All cases have orange boxes — waiting before re-check.")
+
+        mins = random.uniform(5, 7)
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
+        return True
+
 
     # Reported Cases: pick row with NO orange; prefer green/yellow
     if not _navigate_to_page_via_menu("//span[@class='police']",
@@ -746,11 +774,9 @@ def solve_case(character_name):
                     # Mark this case to the database so we skip until Action is ready
                     cid = _get_current_case_id()
                     if cid:
-                        data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
-                        pf = set(data.get("_pending_forensics", []))
+                        pf = set(_read_json_file(global_vars.PENDING_FORENSICS_FILE) or [])
                         pf.add(cid)
-                        data["_pending_forensics"] = sorted(pf)
-                        _write_json_file(global_vars.PENDING_FORENSICS_FILE, data)
+                        _write_json_file(global_vars.PENDING_FORENSICS_FILE, sorted(pf))
                         print(f"FORENSICS: Action not ready; marking case #{cid} to skip until Action=0.")
 
                     _return_case()
@@ -762,12 +788,10 @@ def solve_case(character_name):
                     # Since we requested forensics, unmark this case id (if present)
                     cid = _get_current_case_id()
                     if cid:
-                        data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
-                        pf = set(data.get("_pending_forensics", []))
+                        pf = set(_read_json_file(global_vars.PENDING_FORENSICS_FILE) or [])
                         if cid in pf:
                             pf.remove(cid)
-                            data["_pending_forensics"] = sorted(pf)
-                            _write_json_file(global_vars.PENDING_FORENSICS_FILE, data)
+                            _write_json_file(global_vars.PENDING_FORENSICS_FILE, sorted(pf))
 
                     # since we requested forensics, unskip this id (if present)
                     cid = _get_current_case_id()
