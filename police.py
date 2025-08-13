@@ -186,12 +186,24 @@ def prepare_police_cases(character_name):
 
     print("\n--- Preparing Police Case ---")
 
-    # Go to City page, then open the police menu, which displays the current case.
-    if not _navigate_to_page_via_menu(
-        "//span[@class='city']",
-        "//a[normalize-space()='']//span[@class='police']",
-        "Police Current Case"):
-        return False
+    # If we're already on the City page (local.asp), skip re-navigation; just open Police.
+    try:
+        curr_url = (global_vars.driver.current_url or "").lower()
+    except Exception:
+        curr_url = ""
+
+    if "local.asp" in curr_url:
+        print("Already on City (local.asp). Opening Police…")
+        if not _find_and_click(By.XPATH, "//a[normalize-space()='']//span[@class='police']"):
+            print("FAILED: Could not open Police from City.")
+            return False
+    else:
+        # Navigate to city page if not already on it
+        if not _navigate_to_page_via_menu(
+                "//span[@class='city']",
+                "//a[normalize-space()='']//span[@class='police']",
+                "Police Current Case"):
+            return False
 
     # If the red box is absent -> we DO have an active case.
     fail_box = _find_element(By.XPATH, "//div[@id='fail']")
