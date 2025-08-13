@@ -267,7 +267,7 @@ def prepare_police_cases(character_name):
                 timers = getattr(global_vars, 'jail_timers', {}) or {}
                 action_remaining = float(timers.get('action_time_remaining', float('inf')))
 
-                data = _read_json_file(global_vars.COOLDOWN_FILE)
+                data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
                 pending = set(data.get("_pending_forensics", []))
 
                 if case_id and (action_remaining > 0) and (case_id in pending):
@@ -746,11 +746,11 @@ def solve_case(character_name):
                     # Mark this case to the database so we skip until Action is ready
                     cid = _get_current_case_id()
                     if cid:
-                        data = _read_json_file(global_vars.COOLDOWN_FILE)
+                        data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
                         pf = set(data.get("_pending_forensics", []))
                         pf.add(cid)
                         data["_pending_forensics"] = sorted(pf)
-                        _write_json_file(global_vars.COOLDOWN_FILE, data)
+                        _write_json_file(global_vars.PENDING_FORENSICS_FILE, data)
                         print(f"FORENSICS: Action not ready; marking case #{cid} to skip until Action=0.")
 
                     _return_case()
@@ -762,12 +762,12 @@ def solve_case(character_name):
                     # Since we requested forensics, unmark this case id (if present)
                     cid = _get_current_case_id()
                     if cid:
-                        data = _read_json_file(global_vars.COOLDOWN_FILE)
+                        data = _read_json_file(global_vars.PENDING_FORENSICS_FILE)
                         pf = set(data.get("_pending_forensics", []))
                         if cid in pf:
                             pf.remove(cid)
                             data["_pending_forensics"] = sorted(pf)
-                            _write_json_file(global_vars.COOLDOWN_FILE, data)
+                            _write_json_file(global_vars.PENDING_FORENSICS_FILE, data)
 
                     # since we requested forensics, unskip this id (if present)
                     cid = _get_current_case_id()

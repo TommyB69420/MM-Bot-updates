@@ -1,7 +1,7 @@
 import datetime
 import random
 import time
-
+import sys
 from selenium.common import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 import global_vars
@@ -16,8 +16,7 @@ from database_functions import init_local_db
 from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
-from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
-    clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training
+from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -54,7 +53,7 @@ def fetch_initial_player_data():
             player_data[key] = None
     return player_data
 
-def check_for_logout_and_login() -> bool:
+def check_for_logout_and_login():
     """
     Handles bounce-back after logging in:
     - If on login screen (default.asp), enter username/password and click Sign in.
@@ -106,6 +105,29 @@ def check_for_logout_and_login() -> bool:
         print("Bounce back to login detected. Retrying…")
         time.sleep(1)  # small pause before retry
 
+def check_for_gbh(character_name: str):
+    """
+    If current URL contains gbh.asp, alert Discord and terminate.
+    Returns True if GBH was detected (process will exit).
+    """
+    try:
+        url = (global_vars.driver.current_url or "").lower()
+    except Exception:
+        url = ""
+
+    if "gbh.asp" in url:
+        try:
+            discord_id = global_vars.config['Discord Webhooks'].get('DiscordID', '').strip()
+        except Exception:
+            discord_id = '@discordID'
+
+        # message discord
+        msg = f"{discord_id} @here, {character_name} has been GBHd. OMGGG FUCCCKK"
+        print("GBH DETECTED — sending Discord alert and stopping the bot.")
+        send_discord_notification(msg)
+        sys.exit(0)
+
+    return False
 
 def get_enabled_configs(location):
     """
@@ -282,7 +304,11 @@ def perform_critical_checks(character_name):
         print("Logged out. Attempting login...")
         if check_for_logout_and_login():
             global_vars.initial_game_url = global_vars.driver.current_url
-            return True  # Restart main loop after re-login
+            return True  # Restart the main loop after re-login
+
+        # GBH page detection
+    if check_for_gbh(character_name):
+        return True
 
     # --- Script Check Detection ---
     current_url = global_vars.driver.current_url.lower()
