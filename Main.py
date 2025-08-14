@@ -197,7 +197,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Earn', earn))
     if cfg.getboolean('Actions Settings', 'CommunityService', fallback=False):
         active.append(('Community Service', action))
-    if cfg.getboolean('Actions Settings', 'StudyDegrees', fallback=False):
+    if cfg.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location == home_city:
         active.append(('Study Degree', action))
     if cfg.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False):
         active.append(('Manufacture Drugs', action))
@@ -205,7 +205,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Event', event))
     if cfg.getboolean('Launder', 'DoLaunders', fallback=False):
         active.append(('Launder', launder))
-    if cfg.get('Actions Settings', 'Training', fallback='').strip():
+    if cfg.get('Actions Settings', 'Training', fallback='').strip() and location == home_city:
         active.append(('Training', action))
     active.append(('Yellow Pages Scan', yps))
     active.append(('Funeral Parlour Scan', fps))
@@ -225,7 +225,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
             active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
 
     # Career specific based on occupation
-    if cfg.getboolean('Judge', 'Do_Cases', fallback=False):
+    if cfg.getboolean('Judge', 'Do_Cases', fallback=False) and location == home_city:
         active.append(('Judge Casework', case))
     if occupation == "Lawyer":
         active.append(('Lawyer Casework', case))
@@ -235,16 +235,16 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('FireFighter Casework', case))
     if occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director"):
         active.append(('Medical Casework', case))
-    if occupation in ("Bank Teller", "Loan Officer", "Bank Manager"):
+    if occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city:
         active.append(('Bank Casework', case))
         active.append(('Bank add clients', bank_add))
     if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
         active.append(('Firefighter Duties', action))
-    if cfg.getboolean('Police', 'Post911', fallback=False):
+    if cfg.getboolean('Police', 'Post911', fallback=False) and location == home_city:
         active.append(('Post 911', post_911))
-    if cfg.getboolean('Police', 'DoCases', fallback=False):
+    if cfg.getboolean('Police', 'DoCases', fallback=False) and location == home_city:
         active.append(('Do Cases', case))
-    if cfg.getboolean('Police', 'DoForensics', fallback=False):
+    if cfg.getboolean('Police', 'DoForensics', fallback=False) and location == home_city:
         effective_forensics = max(action, case)
         active.append(('Forensics', effective_forensics))
 
