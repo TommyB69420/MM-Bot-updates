@@ -225,7 +225,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
             active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
 
     # Career specific based on occupation
-    if cfg.getboolean('Judge', 'Do_Cases', fallback=False) and location == home_city:
+    if cfg.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ["Judge", "Supreme Court Judge"] and location == home_city:
         active.append(('Judge Casework', case))
     if occupation == "Lawyer":
         active.append(('Lawyer Casework', case))
@@ -238,7 +238,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
     if occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city:
         active.append(('Bank Casework', case))
         active.append(('Bank add clients', bank_add))
-    if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
+    if cfg.getboolean('Fire', 'DoFireDuties', fallback=False) and occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief"):
         active.append(('Firefighter Duties', action))
     if cfg.getboolean('Police', 'Post911', fallback=False) and occupation in ["Police Officer"] and location == home_city:
         active.append(('Post 911', post_911))
