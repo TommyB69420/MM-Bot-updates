@@ -3,7 +3,7 @@ import time
 import re
 import requests
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text, _navigate_to_page_via_menu, _select_dropdown_option
 import global_vars
 from helper_functions import _find_element, _find_and_click, _get_element_text
@@ -309,17 +309,31 @@ def process_unread_journal_entries(player_data):
     processed_any_new = False
 
     if journal_table_element:
-        all_rows = journal_table_element.find_elements(By.TAG_NAME, "tr")
-
         i = 0
-        while i < len(all_rows):
-            row = all_rows[i]
+        while True:
             try:
-                new_marker_b_tag = row.find_element(By.XPATH, ".//b[text()='NEW']")
+                # Re-locate table and rows each iteration to avoid stale references
+                journal_table_element = _find_element(By.XPATH, journal_table_xpath, timeout=2)
+                all_rows = journal_table_element.find_elements(By.TAG_NAME, "tr") if journal_table_element else []
+                if i >= len(all_rows):
+                    break
+
+                row = all_rows[i]
+                try:
+                    new_marker_b_tag = row.find_element(By.XPATH, ".//b[text()='NEW']")
+                except StaleElementReferenceException:
+                    # DOM refreshed (after ACCEPT/DECLINE + back) — retry same index
+                    time.sleep(0.2)
+                    continue
+
                 if new_marker_b_tag:
                     if i + 1 < len(all_rows):
                         content_row = all_rows[i + 1]
-                        title_element_check = content_row.find_element(By.XPATH, ".//strong[@class='title']")
+                        try:
+                            _ = content_row.find_element(By.XPATH, ".//strong[@class='title']")
+                        except StaleElementReferenceException:
+                            time.sleep(0.2)
+                            continue
 
                         title_element = content_row.find_element(By.XPATH, ".//strong[@class='title']")
                         time_element = content_row.find_element(By.XPATH, ".//span[@class='time']")
@@ -334,8 +348,8 @@ def process_unread_journal_entries(player_data):
                                 var labelElem = arguments[0];
                                 var contentText = '';
                                 var foundTimeSpan = false;
-                                for (var i = 0; i < labelElem.childNodes.length; i++) {
-                                    var node = labelElem.childNodes[i];
+                                for (var i2 = 0; i2 < labelElem.childNodes.length; i2++) {
+                                    var node = labelElem.childNodes[i2];
                                     if (node.nodeType === 1 && node.tagName.toLowerCase() === 'span' && node.className === 'time') {
                                         foundTimeSpan = true;
                                     } else if (foundTimeSpan) {
@@ -358,43 +372,50 @@ def process_unread_journal_entries(player_data):
 
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
 
-                        # Check for flu journal entry
+                        # Flu check (unchanged)
                         if "you have a slightly nauseous feeling in your" in entry_content.lower():
                             if check_into_hospital_for_surgery():
                                 print("Checked into hospital, stopping journal processing.")
                                 return True
 
-                        # Auto buy drug offers.
+                        # --- Auto drug offers ---
                         if "has offered you some drugs to purchase" in entry_content.lower():
                             print("Detected journal drug offer - processing…")
                             handled = drug_offers(player_data)
                             if handled:
                                 processed_any_new = True
-                                i += 1
+                                # After handling, DOM likely rebuilt → restart from top with fresh refs
+                                i = 0
+                                time.sleep(0.2)
                                 continue
 
                         combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
 
-                        should_send_to_discord = False
-                        for send_phrase in send_list:
-                            if send_phrase in combined_entry_info:
-                                should_send_to_discord = True
-                                break
+                        should_send_to_discord = any(send_phrase in combined_entry_info for send_phrase in send_list)
 
                         if should_send_to_discord:
                             full_discord_message = f"New Journal Entry - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}"
                             send_discord_notification(full_discord_message)
                             print(f"Sent journal entry to Discord: '{entry_title}' (matched send list).")
                         else:
-                            print(f"Skipping journal entry: '{entry_title}' as it does not match any specified send filters.")
+                            print(
+                                f"Skipping journal entry: '{entry_title}' as it does not match any specified send filters.")
 
                         processed_any_new = True
-                        i += 1
+                        i += 2  # skip marker + content rows
+                        continue
                     else:
                         print("Found 'NEW' marker but no subsequent content row. Skipping.")
             except NoSuchElementException:
                 pass
+            except StaleElementReferenceException:
+                # Full table went stale — loop will re-fetch on next iteration
+                time.sleep(0.2)
+                continue
+
+            # advance when current row wasn't a NEW marker
             i += 1
+
     else:
         print("No journal entries table found.")
 
@@ -590,7 +611,7 @@ def drug_offers(initial_player_data: dict):
     unit_price = math.ceil(total_price / units)
     print(f"Drug offer: {drug_name} | Units: {units:,} | Total: ${total_price:,} | Price per unit: ${unit_price:,}")
     try:
-        send_discord_notification(f"Drug offer: {drug_name} — {units:,} units for ${total_price:,} (${unit_price:,}) per unit.")
+        send_discord_notification(f"Drug offer: {drug_name} — {units:,} units for ${total_price:,} (${unit_price:,} per unit.)")
     except Exception:
         pass
 
@@ -611,7 +632,7 @@ def drug_offers(initial_player_data: dict):
         return True
 
     if unit_price > cap:
-        print(f"[DRUGS] Unit price ${unit_price:,} exceeds cap ${cap:,} for {drug_name}. Declining.")
+        print(f"Unit price ${unit_price:,} exceeds cap ${cap:,} for {drug_name}. Declining.")
         try:
             send_discord_notification(f"Declined {drug_name} — price per unit ${unit_price:,} exceeds cap ${cap:,}.")
         except Exception:
