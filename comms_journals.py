@@ -6,6 +6,8 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text, _navigate_to_page_via_menu, _select_dropdown_option
 import global_vars
+from helper_functions import _find_element, _find_and_click, _get_element_text
+import math
 
 
 def send_discord_notification(message):
@@ -362,6 +364,15 @@ def process_unread_journal_entries(player_data):
                                 print("Checked into hospital, stopping journal processing.")
                                 return True
 
+                        # Auto buy drug offers.
+                        if "has offered you some drugs to purchase" in entry_content.lower():
+                            print("Detected journal drug offer - processing…")
+                            handled = drug_offers(player_data)
+                            if handled:
+                                processed_any_new = True
+                                i += 1
+                                continue
+
                         combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
 
                         should_send_to_discord = False
@@ -416,13 +427,14 @@ def process_unread_journal_entries(player_data):
     else:
         print("Requests/Offers link not found on journal page.")
 
-    try:
-        global_vars.driver.get(initial_url)
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-    except Exception as e:
-        print(f"Error returning to initial URL after journal processing: {e}")
-
     return processed_any_new
+
+def _back_to_journal():
+    """Returns back to the jounral page, so the logic can continue to read other journals."""
+    try:
+        _find_and_click(By.XPATH, "//span[@id='journals_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS)
+    except Exception:
+        pass
 
 def accept_lawyer_rep(entry_content):
     """
@@ -477,3 +489,202 @@ def check_into_hospital_for_surgery():
     send_discord_notification("Applied for surgery at hospital due to flu.")
     return True
 
+def drug_offers(initial_player_data: dict):
+    """
+    Processes a journal drug offer.
+    Adds your dirty and clean money together to see if it can buy drugs. If not enough on hand, it will withdraw the balance.
+    Check the cost of offered drugs against the max value in settings.ini. And will delcine if it's too expensive, and will accept if its equal to or lower than max.
+    Buying with clean can be toggled from settings.ini.
+    Returns True if we clicked ACCEPT or DECLINE (i.e., handled the offer), False otherwise.
+    """
+
+    from misc_functions import withdraw_money
+    cfg = global_vars.config
+    drugs_cfg = cfg['Drugs'] if 'Drugs' in cfg else None
+    use_clean = drugs_cfg.getboolean('UseClean', fallback=True) if drugs_cfg else True
+
+    # Feature toggle
+    if not drugs_cfg or not drugs_cfg.getboolean('BuyDrugs', fallback=False):
+        print("[DRUGS] BuyDrugs disabled in settings.ini — skipping.")
+        _back_to_journal()
+        return False
+
+    # Click the inline 'here' link in the journal entry
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='here']", pause=global_vars.ACTION_PAUSE_SECONDS):
+        print("Could not click 'here' link from the journal entry.")
+        _back_to_journal()
+        return False
+
+    # If the deal has already been cancelled, a fail box will exist
+    if _find_element(By.XPATH, "//div[@id='fail']", timeout=2, suppress_logging=True):
+        print("Drug offer shows as cancelled (div#fail present). Exiting.")
+        _back_to_journal()
+        return False
+
+    # Click 'View' to see details of offer
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='View']", pause=global_vars.ACTION_PAUSE_SECONDS):
+        print("Could not click 'View' to open the offer.")
+        return False
+
+    # Parse total price, drug type, units
+    price_block = _get_element_text(By.XPATH, "//div[@id='content']//p[3]", timeout=3)
+    if not price_block:
+        print("Could not read price block.")
+        _back_to_journal()
+        return False
+
+    # Extract an integer price from the paragraph (handles $ and commas)
+    m_price = re.search(r"\$?\s*([0-9][0-9,]*)", price_block.replace(',', ''))
+    total_price = int(m_price.group(1)) if m_price else None
+    if not total_price:
+        print(f"Could not parse price from: '{price_block}'")
+        _back_to_journal()
+        return False
+
+    # View the drug image to determine what drug was offered. Drug image: //div[@id='content']//img[contains(@src, '/images/drugs/')]
+    drug_img_src = None
+    try:
+        img_el = _find_element(By.XPATH, "//div[@id='content']//img[contains(@src, '/images/drugs/')]", timeout=3)
+        if img_el:
+            drug_img_src = img_el.get_attribute("src") or ""
+    except Exception:
+        pass
+
+    if not drug_img_src:
+        print("Could not locate drug image to determine drug type.")
+        _back_to_journal()
+        return False
+
+    # Extract the name from the src (e.g., '/images/drugs/marijuana.gif' -> 'marijuana'). Normalize to a title case with a couple of special cases
+    base = drug_img_src.split('/')[-1]
+    base = base.split('.')[0]
+    drug_key = base.strip().lower()
+
+    name_map = {
+        'marijuana': 'Marijuana',
+        'cocaine': 'Cocaine',
+        'ecstasy': 'Ecstasy',
+        'heroin': 'Heroin',
+    }
+    drug_name = name_map.get(drug_key, drug_key.title())
+
+    # Extract how many units have been offered
+    units_text = _get_element_text(By.XPATH, "//td[@class='item_content']", timeout=3)
+    if not units_text:
+        print("Could not read units from //td[@class='item_content'].")
+        _back_to_journal()
+        return False
+
+    # Extract integer units from that cell
+    m_units = re.search(r"([0-9][0-9,]*)", units_text.replace(',', ''))
+    try:
+        units = int(m_units.group(1)) if m_units else None
+    except Exception:
+        units = None
+
+    if not units or units <= 0:
+        print(f"Invalid units parsed from '{units_text}'.")
+        _back_to_journal()
+        return False
+
+    unit_price = math.ceil(total_price / units)
+    print(f"Drug offer: {drug_name} | Units: {units:,} | Total: ${total_price:,} | Price per unit: ${unit_price:,}")
+    try:
+        send_discord_notification(f"Drug offer: {drug_name} — {units:,} units for ${total_price:,} (${unit_price:,}) per unit.")
+    except Exception:
+        pass
+
+    # Check price cap for this drug from settings.ini. If a cap for this drug is missing, treat as not allowed and decline.
+    try:
+        cap = drugs_cfg.getint(drug_name, fallback=-1)
+    except Exception:
+        cap = -1
+
+    if cap <= 0:
+        print(f"No valid cap found in settings.ini for '{drug_name}'. Declining.")
+        try:
+            send_discord_notification(f"Declined {drug_name} offer — no cap set in settings.ini.")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True
+
+    if unit_price > cap:
+        print(f"[DRUGS] Unit price ${unit_price:,} exceeds cap ${cap:,} for {drug_name}. Declining.")
+        try:
+            send_discord_notification(f"Declined {drug_name} — price per unit ${unit_price:,} exceeds cap ${cap:,}.")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True
+
+    # Check money on hand: Clean + Dirty must cover the total price; if not and UseClean=True, withdraw shortfall into clean
+    clean = int(initial_player_data.get("Clean Money", 0) or 0)
+    dirty = int(initial_player_data.get("Dirty Money", 0) or 0)
+    combined = clean + dirty
+
+    print(f"Funds — Clean: ${clean:,} | Dirty: ${dirty:,} | Combined: ${combined:,} | Needed: ${total_price:,}")
+
+    if combined >= total_price:
+        print("Combined on-hand funds are sufficient — accepting without withdrawal.")
+        try:
+            send_discord_notification(f"Accepted {drug_name} for ${total_price:,} — paid from on-hand funds.")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True
+
+    # Not enough combined; optionally top up clean from bank if enabled
+    if not use_clean:
+        print("Insufficient combined funds and UseClean=False — declining.")
+        try:
+            send_discord_notification(f"Declined {drug_name} — not enough on-hand funds and UseClean is disabled.")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True
+
+    shortfall = max(0, total_price - clean)  # amount to add to clean to meet total price
+    if shortfall <= 0:
+        print("Clean funds already sufficient — accepting.")
+        try:
+            send_discord_notification(f"Accepted {drug_name} for ${total_price:,} — clean funds already sufficient.")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True
+
+    print(f"Attempting bank withdrawal of ${shortfall:,} to cover offer…")
+    try:
+        if withdraw_money(shortfall):
+            print("Withdrawal succeeded — accepting offer.")
+            try:
+                send_discord_notification(f"Accepted {drug_name} for ${total_price:,} — withdrew ${shortfall:,} clean to cover.")
+            except Exception:
+                pass
+            _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS)
+            _back_to_journal()
+            return True
+        else:
+            print("Withdrawal failed — declining.")
+            try:
+                send_discord_notification(f"Declined {drug_name} — failed to withdraw ${shortfall:,} needed.")
+            except Exception:
+                pass
+            _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
+            _back_to_journal()
+            return True
+    except Exception as e:
+        print(f"Exception during withdrawal: {e}. Declining for safety.")
+        try:
+            send_discord_notification(f"Declined {drug_name} — withdrawal error ({e}).")
+        except Exception:
+            pass
+        _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
+        _back_to_journal()
+        return True

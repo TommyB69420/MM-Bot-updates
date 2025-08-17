@@ -856,8 +856,18 @@ def execute_aggravated_crime_logic(player_data):
         max_steal = hack_max
         cooldown_key = global_vars.MAJOR_CRIME_COOLDOWN_KEY
 
-        if not _open_aggravated_crime_page(crime_type):
-            return False
+        # Only hack if in home city
+        current_city = player_data.get("Location")
+        if current_city != player_data.get("Home City"):
+            print(f"Skipping Hack: Current city '{current_city}' is not home city '{player_data.get('Home City')}'. Trying another crime instead.")
+
+            # Remove Hack from enabled list and pick another
+            fallback_crimes = [c for c in enabled_crimes if c != "Hack"]
+            if fallback_crimes:
+                crime_type = random.choice(fallback_crimes)
+                print(f"Falling back to {crime_type} instead of Hack.")
+            else:
+                return False
 
         attempts_in_cycle = 0
         max_attempts_per_cycle = 60
