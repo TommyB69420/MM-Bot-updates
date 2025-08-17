@@ -153,6 +153,7 @@ def get_enabled_configs(location):
     "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower(),
     "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False),
     "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False),
+    "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients', fallback=False) and location == home_city and occupation in ["Bank Teller", "Loan Officer", "Bank Manager"],
 }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data):
@@ -234,6 +235,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data):
         active.append(('Medical Casework', case))
     if occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city:
         active.append(('Bank Casework', case))
+    if enabled_configs['do_bank_add_clients_enabled']:
         active.append(('Bank add clients', bank_add))
     if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
         active.append(('Firefighter Duties', action))
@@ -688,16 +690,11 @@ while True:
         continue
 
     # Bank Add Clients Logic
-    if occupation in ("Bank Teller", "Loan Officer", "Bank Manager"):
-        if location == home_city:
-            bank_add_clients_time_remaining = all_timers.get('bank_add_clients_time_remaining', float('inf'))
-            if bank_add_clients_time_remaining <= 0:
-                print(f"Bank Add Clients timer ({bank_add_clients_time_remaining:.2f}s) is ready. Attempting to add new clients.")
-                if banker_add_clients(initial_player_data):
-                    action_performed_in_cycle = True
-        else:
-            print(f"Skipping Bank Casework: Not in home city. Location: {location}, Home City: {home_city}.")
-    # No else clause — just skip silently if not a banker
+    if enabled_configs['do_bank_add_clients_enabled']:
+        if bank_add_clients_time_remaining <= 0:
+            print(f"Add Clients timer ({bank_add_clients_time_remaining:.2f}s) is ready. Attempting to add new clients.")
+            if banker_add_clients(initial_player_data):
+                action_performed_in_cycle = True
 
     if perform_critical_checks(character_name):
         continue
