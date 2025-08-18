@@ -846,6 +846,18 @@ def execute_aggravated_crime_logic(player_data):
 
     # Randomly select one of the enabled crimes
     crime_type = random.choice(enabled_crimes)
+
+    # If Hack was selected but you're not in home city, switch to another enabled crime
+    if crime_type == "Hack":
+        current_city = player_data.get("Location")
+        if current_city != player_data.get("Home City"):
+            fallback_pool = [c for c in enabled_crimes if c != "Hack"]
+            if not fallback_pool:
+                print(f"Skipping Hack: not in home city ('{current_city}' vs '{player_data.get('Home City')}'), and no other crimes enabled.")
+                return False
+            crime_type = random.choice(fallback_pool)
+            print(f"Skipping Hack outside home city. Switching to {crime_type}.")
+
     print(f"\n--- Beginning Aggravated Crime ({crime_type}) Operation ---")
 
     crime_attempt_initiated = False
@@ -859,15 +871,11 @@ def execute_aggravated_crime_logic(player_data):
         # Only hack if in home city
         current_city = player_data.get("Location")
         if current_city != player_data.get("Home City"):
-            print(f"Skipping Hack: Current city '{current_city}' is not home city '{player_data.get('Home City')}'. Trying another crime instead.")
+            print(f"Skipping Hack: Current city '{current_city}' is not home city '{player_data.get('Home City')}'.")
+            return False
 
-            # Remove Hack from enabled list and pick another
-            fallback_crimes = [c for c in enabled_crimes if c != "Hack"]
-            if fallback_crimes:
-                crime_type = random.choice(fallback_crimes)
-                print(f"Falling back to {crime_type} instead of Hack.")
-            else:
-                return False
+        if not _open_aggravated_crime_page("Hack"):
+            return False
 
         attempts_in_cycle = 0
         max_attempts_per_cycle = 60
@@ -894,7 +902,7 @@ def execute_aggravated_crime_logic(player_data):
                 break
             elif status in ['cooldown_target', 'not_online', 'no_money', 'non_existent_target', 'wrong_city']:
                 tried_players_in_cycle.add(target_attempted)
-                if not _open_aggravated_crime_page(crime_type):
+                if not _open_aggravated_crime_page("Hack"):
                     print(f"FAILED: Failed to re-open {crime_type} page. Cannot continue attempts for this cycle.")
                     break
             elif status in ['failed_password', 'failed_attempt', 'failed_proxy', 'general_error']:
