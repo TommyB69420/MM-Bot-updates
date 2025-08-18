@@ -668,7 +668,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
     log_aggravated_event(crime_type, target_player_name, "Failed", 0)
     return 'general_error', target_player_name, None
 
-def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targets):
+def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targets=None):
     """Performs a single hacking attempt."""
 
     if retried_targets is None:
@@ -717,6 +717,10 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
         if transfer_money(1, target_player_name):
             retried_targets.add(target_player_name)
             print("Transfer successful. Retrying hack on same target using configured amount...")
+            # Re-open Hack page after returning from Bank so the Hack form exists again
+            if not _open_aggravated_crime_page("Hack"):
+                print("FAILED: Could not re-open Hack page after transfer. Aborting retry.")
+                return 'general_error', target_player_name, None
             # Re-enter details in the same way you already do (kept identical to your current flow)
             if not _find_and_send_keys(By.XPATH, "//input[@name='hack']", target_player_name):
                 return 'general_error', target_player_name, None
