@@ -9,7 +9,8 @@ from selenium.webdriver.support.select import Select
 import global_vars
 from database_functions import _read_json_file, remove_player_cooldown, set_player_data
 from helper_functions import _find_and_send_keys, _find_and_click, _find_element, _navigate_to_page_via_menu, \
-    _get_element_text, _get_element_attribute, _find_elements, _get_current_url
+    _get_element_text, _get_element_attribute, _find_elements, _get_current_url, blind_eye_queue_count, \
+    _get_dropdown_options, _select_dropdown_option, dequeue_blind_eye
 from timer_functions import get_game_timer_remaining, get_all_active_game_timers
 
 
@@ -611,9 +612,7 @@ def banker_laundering():
         if not _navigate_to_page_via_menu(
             "//span[@class='income']",
             "//a[normalize-space()='Convert Dirty Money']",
-            "Banker Page"
-        ):
-            # TODO: consider using a banker-specific cooldown variable
+            "Banker Page"):
             global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
             return False
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
@@ -1052,3 +1051,64 @@ def fire_duties():
         print("Train button not found.")
         return False
 
+
+def customs_blind_eyes():
+    """
+    Executes ONE 'Turn a Blind Eye' if anything is queued and returns True on success.
+    Assumes the *caller* only invokes this when the Trafficking/AgCrime timer is ready (<= 0).
+    """
+    if blind_eye_queue_count() <= 0:
+        return False
+
+    # Navigate to the aggravated crime menu
+    if not _navigate_to_page_via_menu(
+        "//span[@class='income']",
+        "//a[@href='/income/agcrime.asp'][normalize-space()='Aggravated Crimes']",
+        "Aggravated Crimes"):
+        print("FAILED: navigate to Aggravated Crimes")
+        return False
+
+    # Select radio value 'blindeye', then submit
+    if not _find_and_click(By.XPATH, "//input[@type='radio' and @name='agcrime' and @value='blindeye']"):
+        print("FAILED: blindeye radio not found")
+        return False
+
+    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+        print("FAILED: Commit Crime button not found/clickable")
+        return False
+
+    # On blindeye.asp, pick a player in the dropdown and click 'Turn a Blind Eye'. Try a specific form first, then a general fallback
+    select_xpath = "//form[@action='blindeye.asp']//select | //div[@id='holder_content']//form//select"
+    options = _get_dropdown_options(By.XPATH, select_xpath) or []
+
+    # Build list of valid, non-placeholder entries
+    valid = []
+    for opt in options:
+        t = (opt or "").strip()
+        low = t.lower()
+        if not t or low.startswith(("select", "choose", "—", "-", "please")):
+            continue
+        valid.append(t)
+
+    # Guard B: if there are no valid targets, set a short retry cooldown and bail
+    if not valid:
+        print("No valid Blind Eye targets available. Setting short retry cooldown.")
+        global_vars._script_trafficking_cooldown_end_time = (datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120)))
+        return False
+
+    choice = valid[0]
+
+    # Finally, submit: usually name='B1' or value text containing 'Turn a Blind Eye'
+    if not _find_and_click(
+        By.XPATH, "//input[@type='submit' and (@name='B1' or contains(@value,'Turn a Blind Eye'))]"):
+        print("FAILED: 'Turn a Blind Eye' submit not found/clickable")
+        return False
+
+    # if blind eye is success, consume 1 success token from the JSON file.
+    if dequeue_blind_eye():
+        remaining = blind_eye_queue_count()
+        print(f"Turned a Blind Eye for '{choice}'. Remaining queued: {remaining}")
+    else:
+        print("WARNING: Action done but queue could not be decremented (file read/write issue?)")
+
+    return True

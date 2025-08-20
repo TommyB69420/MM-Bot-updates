@@ -7,15 +7,16 @@ from selenium.webdriver.common.by import By
 import global_vars
 from agg_crimes import execute_aggravated_crime_logic, execute_yellow_pages_scan, execute_funeral_parlour_scan
 from earn_functions import execute_earns_logic
-from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework
-from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail
+from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
+    manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
+    customs_blind_eyes
+from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
+    blind_eye_queue_count
 from database_functions import init_local_db
 from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
-from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
-    clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training, combat_training, fire_training, \
-    customs_training
+from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training, combat_training, fire_training, customs_training
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -409,6 +410,7 @@ while True:
     case_time_remaining = all_timers.get('case_time_remaining', float('inf'))
     launder_time_remaining = all_timers.get('launder_time_remaining', float('inf'))
     event_time_remaining = all_timers.get('event_time_remaining', float('inf'))
+    trafficking_time_remaining = all_timers.get('trafficking_time_remaining', float('inf'))
 
     # Aggravated crime timers
     aggravated_crime_time_remaining = all_timers.get('aggravated_crime_time_remaining', float('inf'))
@@ -696,6 +698,16 @@ while True:
 
     if perform_critical_checks(character_name):
         continue
+
+    # Customs Blind Eye Logic
+    queue_count = blind_eye_queue_count()
+    if ('customs' in (occupation or '').lower()) and queue_count > 0:
+        if trafficking_time_remaining <= 0:
+            print(f"Blind Eye queued ({queue_count}) and Trafficking timer ({trafficking_time_remaining:.2f}s) is ready. Attempting Blind Eye.")
+            if customs_blind_eyes():
+                action_performed_in_cycle = True
+        else:
+            print(f"Blind Eye queued ({queue_count}), but Trafficking timer not ready ({trafficking_time_remaining:.2f}s).")
 
     # Bank Add Clients Logic
     if enabled_configs['do_bank_add_clients_enabled']:
