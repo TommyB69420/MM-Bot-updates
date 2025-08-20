@@ -1090,7 +1090,7 @@ def customs_blind_eyes():
             continue
         valid.append(t)
 
-    # Guard B: if there are no valid targets, set a short retry cooldown and bail
+    # If there are no valid blind eye requests, set a short retry cooldown and bail
     if not valid:
         print("No valid Blind Eye targets available. Setting short retry cooldown.")
         global_vars._script_trafficking_cooldown_end_time = (datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120)))
