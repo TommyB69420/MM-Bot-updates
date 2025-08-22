@@ -71,6 +71,10 @@ def study_degrees():
         degrees_to_check = ["Business", "Science", "Engineering", "Medicine", "Law"]
         for degree in degrees_to_check:
             if degree in dropdown_options:
+                print(f"Starting a new degree ('{degree}') — withdrawing $10,000 first.")
+                if not withdraw_money(10000):
+                    print("FAILED: Could not withdraw $10,000 for new degree.")
+                    return False
                 if _select_dropdown_option(By.XPATH, ".//*[@id='study_holder']/div[@id='holder_content']/form/select", degree):
                     print(f"Selected '{degree}' degree.")
                     if _find_and_click(By.XPATH, "//form//input[@type='submit']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
