@@ -594,6 +594,7 @@ def auto_buy_drug_store_item(item_name: str):
         print(f"[AutoBuy] Drug Store cooldown set until {global_vars._script_drug_store_cooldown_end_time}")
     else:
         print(f"[AutoBuy] WARNING: No success message found after purchasing {item_name}.")
+        global_vars._script_drug_store_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=30)
         send_discord_notification(f"Failed to purchase {item_name} from Drug Store. The item is gone, or insufficient funds.")
 
 def check_bionics_shop(initial_player_data):
