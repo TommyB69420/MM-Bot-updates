@@ -909,19 +909,15 @@ def police_training():
             current = int(match.group(1))
             total = int(match.group(2))
             print(f"Training Progress: {current}/{total}")
-            if current >= total:
-                print("Training complete. No further action required.")
-                _write_json_file(global_vars.POLICE_TRAINING_DONE_FILE, True)
-                return False
         else:
             print("WARNING: Could not parse training progress.")
     else:
-        print("No success box found — likely the initial join step or a layout change.")
-        # Final fallback: Check for completion paragraph
-        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]")
-        if final_text and "your hard work in training has paid off" in final_text.lower():
+        print("No success box found — likely finished training.")
+        #Check for completion paragraph
+        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]") or ""
+        if "your hard work" in final_text.lower():
             _write_json_file(global_vars.POLICE_TRAINING_DONE_FILE, True)
-            print("FINAL SUCCESS: Training is now fully complete.")
+            print("FINAL SUCCESS: Police training is now fully complete.")
             return False
 
     print("Police training step completed successfully.")
@@ -1133,19 +1129,15 @@ def fire_training():
             current = int(match.group(1))
             total = int(match.group(2))
             print(f"Training Progress: {current}/{total}")
-            if current >= total:
-                print("Training complete. No further action required.")
-                _write_json_file(global_vars.FIRE_TRAINING_DONE_FILE, True)
-                return False
         else:
             print("WARNING: Could not parse training progress.")
     else:
-        print("No success box found — likely the initial join step or a layout change.")
+        print("No success box found — likely finished training.")
         # Final fallback: Check for completion paragraph
-        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]")
-        if final_text and "your hard work in training has paid off" in final_text.lower():
+        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]") or ""
+        if "your hard work" in final_text.lower():
             _write_json_file(global_vars.FIRE_TRAINING_DONE_FILE, True)
-            print("FINAL SUCCESS: Training is now fully complete.")
+            print("FINAL SUCCESS: Fire training is now fully complete.")
             return False
 
     print("Fire training step completed successfully.")
@@ -1209,19 +1201,15 @@ def customs_training():
             current = int(match.group(1))
             total = int(match.group(2))
             print(f"Training Progress: {current}/{total}")
-            if current >= total:
-                print("Training complete. No further action required.")
-                _write_json_file(global_vars.CUSTOMS_TRAINING_DONE_FILE, True)
-                return False
         else:
             print("WARNING: Could not parse training progress.")
     else:
         print("No success box found — likely the initial join step or a layout change.")
         # Final fallback: Check for completion paragraph
-        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]")
-        if final_text and "your hard work in training has paid off" in final_text.lower():
+        final_text = _get_element_text(By.XPATH, "//div[@id='content']//p[1]") or ""
+        if "your hard work" in final_text.lower():
             _write_json_file(global_vars.CUSTOMS_TRAINING_DONE_FILE, True)
-            print("FINAL SUCCESS: Training is now fully complete.")
+            print("FINAL SUCCESS: Customs training is now fully complete.")
             return False
 
     print("Customs training step completed successfully.")
