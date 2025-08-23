@@ -155,6 +155,7 @@ _script_gym_train_cooldown_end_time = datetime.datetime.now()
 _script_bionics_shop_cooldown_end_time = datetime.datetime.now()
 _script_weapon_shop_cooldown_end_time = datetime.datetime.now()
 _script_drug_store_cooldown_end_time = datetime.datetime.now()
+_script_promo_check_cooldown_end_time = datetime.datetime.now()
 jail_timers = {}
 
 # Global variable to store the last known unread message and journal count
@@ -217,3 +218,59 @@ ALL_WEAPON_NAMES = [
     "Protection Vest", "Kevlar Bullet Proof Vest", "Riot Shield"
 ]
 ALL_WEAPON_NAMES_LOWER = [weapon.lower() for weapon in ALL_WEAPON_NAMES]
+
+# Auto-Promotion Map
+PROMO_MAP = {
+    # Hospital
+    "nurse": "one",
+    "doctor": "two",
+    "surgeon": "two",
+    "hospital director": "one",
+
+    # Bank
+    "bank teller": "one",
+    "loan officer": "two",
+    "bank manager": "one",
+
+    # Engineering
+    "mechanic": "two",
+    "technician": "one",
+    "engineer": "one",
+    "chief engineer": "two",
+
+    # Funeral
+    "mortician assistant": "one",
+    "mortician": "one",
+    "undertaker": "two",
+    "funeral director": "one",
+
+    # Fire
+    "fire fighter": "one",
+    "fire chief": "one",
+
+    # Customs
+    "inspector": "two",
+    "supervisor": "one",
+    "superintendent": "one",
+    "commissioner-general": "two",
+    "commissioner general": "two",
+
+    # Law (manual for judge/SCJ)
+    "legal secretary": "one",
+    "lawyer": "one",
+
+    # Gangster (manual for Gio/Godfather/Capi)
+    "dealer": "two",
+    "enforcer": "one",
+    "piciotto": "two",
+    "sgarrista": "one",
+    "capodecima": "one",
+    "caporegime": "one",
+    "boss": "two",
+    "don": "one",
+
+    # Police (manual for commissioner)
+    "sergeant": "two",
+    "senior sergeant": "two",
+    "detective": "one",
+}

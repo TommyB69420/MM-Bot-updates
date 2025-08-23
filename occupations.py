@@ -346,10 +346,6 @@ def engineering_casework(player_data):
     Super-simple engineering: open Maintenance & Construction via Income menu,
     pick the first available job, submit. No prioritization.
     """
-    import datetime, random, time
-    from selenium.webdriver.common.by import By
-    import global_vars
-    from helper_functions import _navigate_to_page_via_menu, _find_elements
 
     print("\n--- Beginning Engineering Casework ---")
 
@@ -357,38 +353,57 @@ def engineering_casework(player_data):
     if not _navigate_to_page_via_menu(
         "//span[@class='income']",
         "//a[normalize-space()='Maintenance and Construction']",
-        "Maintenance and Construction Page"
-    ):
+        "Maintenance and Construction Page"):
         print("FAILED: Navigation to Maintenance and Construction page failed.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
         return False
 
     print("On Maintenance & Construction. Looking for the first available task…")
 
-    # Grab the first visible radio input anywhere under holder_content
+    # Capture your own name for filtering
+    your_character_name = (player_data or {}).get("Character Name", "")
+
+    # Find all selectable tasks
     radios = _find_elements(By.XPATH, ".//*[@id='holder_content']//input[@type='radio']")
     if not radios:
         print("No selectable tasks (no radio inputs found). Short cooldown.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
         return False
 
-    # If id prefer the last available radio button instead of first available, change radios[0] to radios[-1]; Should we wish to prioritise cars.
-    radio = radios[-1]
+    # Loop over radios, skip your own
+    selected_radio = None
+    for candidate in reversed(radios):  # Select last most radio button
+        try:
+            container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text
+            if your_character_name and your_character_name.lower() in container_text.lower():
+                print(f"Skipping self-owned engineering task ({your_character_name}).")
+                continue
+            selected_radio = candidate
+            break
+        except Exception as e:
+            print(f"Warning: could not read a task row: {e}")
+
+    if not selected_radio:
+        print("All available engineering tasks belong to you. Short cooldown.")
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
+        return False
+
+    # Click the chosen radio
     try:
-        radio.click()
+        selected_radio.click()
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     except Exception as e:
-        print(f"FAILED: Could not click the first radio: {e}")
+        print(f"FAILED: Could not click the selected radio: {e}")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
         return False
 
     # Submit the nearest form for that radio (its ancestor form)
     try:
-        form = radio.find_element(By.XPATH, "./ancestor::form[1]")
+        form = selected_radio.find_element(By.XPATH, "./ancestor::form[1]")
         submit = form.find_element(By.XPATH, ".//input[@type='submit' or @class='submit']")
         submit.click()
         time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
-        print("Successfully started the first available engineering task.")
+        print("Successfully started a non-self engineering task.")
         return True
     except Exception as e:
         print(f"FAILED: Could not submit the selected task: {e}")

@@ -74,7 +74,8 @@ def get_all_active_game_timers():
         'check_weapon_shop_time_remaining': 0,
         'check_drug_store_time_remaining': 0,
         'check_bionics_store_time_remaining': 0,
-        'gym_trains_time_remaining': 0
+        'gym_trains_time_remaining': 0,
+        'promo_check_time_remaining': 0,
 
     }
     current_time = datetime.datetime.now()
@@ -175,6 +176,11 @@ def get_all_active_game_timers():
 
     # --- Phase 3: Integrate ALL Script-Managed Internal Cooldowns (using max()) ---
     # This ensures that if the script sets a cooldown (e.g., because an action failed, or you're in the wrong city), that cooldown is respected, overriding any shorter or non-existent in-game timers.
+
+    # Promo Check Cooldown
+    script_promo_check_remaining = (global_vars._script_promo_check_cooldown_end_time - current_time).total_seconds()
+    if script_promo_check_remaining > 0:
+        timers['promo_check_time_remaining'] = max(timers.get('promo_check_time_remaining', 0), script_promo_check_remaining)
 
     # Medical Cooldown
     script_medical_remaining = (global_vars._script_case_cooldown_end_time - current_time).total_seconds()
