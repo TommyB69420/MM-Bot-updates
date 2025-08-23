@@ -383,21 +383,25 @@ while True:
     all_timers = get_all_active_game_timers()
     global_vars.jail_timers = all_timers  # Store for jail logic access
 
+    # Fetch the player data
+    initial_player_data = fetch_initial_player_data()
+    character_name = initial_player_data.get("Character Name", "UNKNOWN")
+
     # --- Jail Check ---
     if is_player_in_jail():
         print("Player is in jail. Entering jail work loop...")
 
         while is_player_in_jail():
+            # --- Critical Checks ---
+            if perform_critical_checks(character_name):
+                continue
+
             global_vars.jail_timers = get_all_active_game_timers()
             jail_work()
             time.sleep(2)  # Tighter loop for responsiveness
 
         print("Player released from jail. Resuming normal script.")
         continue  # Skip the rest of the main loop for this cycle
-
-    # Fetch the player data
-    initial_player_data = fetch_initial_player_data()
-    character_name = initial_player_data.get("Character Name", "UNKNOWN")
 
     # Critical checks are performed throughout the loop to ensure script checks and log-outs are captured quickly
     if perform_critical_checks(character_name):
