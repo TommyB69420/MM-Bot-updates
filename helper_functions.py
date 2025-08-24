@@ -210,3 +210,27 @@ def blind_eye_queue_count():
     """Current queue count."""
     q = _read_json_file(global_vars.BLIND_EYE_QUEUE_FILE) or []
     return len(q) if isinstance(q, list) else 0
+
+def enqueue_community_services(n: int = 1):
+    """Append n units to the Community Service queue (pre-AgCrime requirement)."""
+    os.makedirs(os.path.dirname(global_vars.COMMUNITY_SERVICE_QUEUE_FILE), exist_ok=True)
+    q = _read_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE) or []
+    if not isinstance(q, list):
+        q = []
+    q.extend(["required"] * max(0, int(n)))
+    _write_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE, q)
+
+def dequeue_community_service():
+    """Consume a single unit from the Community Service queue. Return True if dequeued."""
+    q = _read_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE) or []
+    if not isinstance(q, list) or not q:
+        return False
+    q.pop(0)
+    _write_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE, q)
+    return True
+
+def community_service_queue_count():
+    """Current queued number of mandatory community services."""
+    q = _read_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE) or []
+    return len(q) if isinstance(q, list) else 0
+

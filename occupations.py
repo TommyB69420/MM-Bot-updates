@@ -1096,36 +1096,33 @@ def customs_blind_eyes():
     select_xpath = ("//form[@action='blindeye.asp']//select[@name='gangster'] | "
                     "//div[@id='holder_content']//form//select[@name='gangster']")
 
-    # Read options, filter out placeholders
+    # Get all options
     options = _get_dropdown_options(By.XPATH, select_xpath) or []
-    valid = []
-    for opt in options:
-        t = (opt or "").strip()
-        if not t:
-            continue
-        low = t.lower()
-        if low.startswith(("please", "select", "choose", "—", "-", "–")):
-            continue
-        valid.append(t)
+    # Filter out placeholders
+    valid = [t.strip() for t in options if t and not t.lower().startswith(("please", "select", "choose", "—", "-", "–"))]
 
     if not valid:
-        print("No valid Blind Eye targets available. Setting short retry cooldown.")
+        print(f"No valid Blind Eye targets available. Raw options: {options}")
         global_vars._script_trafficking_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(
             seconds=random.uniform(60, 120))
         return False
 
-    # Pick the first valid name (e.g., 'WarN30Days') and APPLY it to the <select>
+    print(f"Valid Blind Eye targets found: {valid}")
+
     choice = valid[0]
     if not _select_dropdown_option(By.XPATH, select_xpath, choice):
-        print(f"FAILED: Could not select '{choice}' from the dropdown.")
+        print(f"FAILED: Could not select '{choice}' from dropdown.")
         return False
 
+    print(f"Selected '{choice}' from Blind Eye dropdown.")
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-    # Now click 'Turn a Blind Eye'
+    # Submit button or fallback
     if not _find_and_click(By.XPATH, "//input[@type='submit' and (@name='B1' or contains(@value,'Turn a Blind Eye'))]"):
         print("FAILED: 'Turn a Blind Eye' submit not found/clickable")
         return False
+
+    print(f"Submitted Blind Eye request for '{choice}'.")
 
     # if blind eye is success, consume 1 success token from the JSON file.
     if dequeue_blind_eye():

@@ -10,7 +10,8 @@ from earn_functions import execute_earns_logic
 from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
     manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
     customs_blind_eyes
-from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, blind_eye_queue_count
+from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
+    blind_eye_queue_count, community_service_queue_count, dequeue_community_service
 from database_functions import init_local_db
 from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
@@ -501,6 +502,17 @@ while True:
 
     if perform_critical_checks(character_name):
         continue
+
+    # Mandatory Community Services (queued by AgCrime gate)
+    queued_cs = community_service_queue_count()
+    if queued_cs > 0 and action_time_remaining <= 0:
+        print(f"Mandatory Community Service queued ({queued_cs}). Attempting 1 now.")
+        if community_services(initial_player_data):
+            if dequeue_community_service():
+                print(f"Completed 1 queued Community Service. Remaining: {community_service_queue_count()}")
+            action_performed_in_cycle = True
+        else:
+            print("Queued Community Service attempt failed or could not start. Will retry next cycle.")
 
     # Community Service Logic
     if enabled_configs['do_community_services_enabled'] and action_time_remaining <= 0:

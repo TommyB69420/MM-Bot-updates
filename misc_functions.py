@@ -1292,4 +1292,7 @@ def take_promotion():
     except Exception:
         pass
 
+    setattr(global_vars, "force_reselect_earn", True)
+    print("Promo: Flag set to force reselecting earn on next cycle.")
+
     return True
