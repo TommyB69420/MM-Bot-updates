@@ -9,7 +9,7 @@ from selenium.webdriver.support.select import Select
 from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, remove_player_cooldown
 import global_vars
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, \
-    _find_element, community_service_queue_count
+    _find_element, community_service_queue_count, _get_element_text_quiet
 from misc_functions import transfer_money
 from timer_functions import parse_game_datetime
 from comms_journals import send_discord_notification
@@ -167,8 +167,7 @@ def _open_aggravated_crime_page(crime_type):
             return False
 
         # check the page-level fail box before touching any radio <<<
-        from helper_functions import enqueue_community_services
-        fail_text = _get_element_text(By.XPATH, "//div[@id='fail']")
+        fail_text = _get_element_text_quiet(By.XPATH, "//div[@id='fail']")
         if fail_text:
             # Example text: "You cannot commit an aggravated crime until you have completed another 1 Services to your community!"
             m = re.search(r"another\s+(\d+)\s+Services", (fail_text or ""), re.IGNORECASE)

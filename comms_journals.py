@@ -220,72 +220,96 @@ def _process_requests_offers_entries():
         print("No Requests/Offers table found.")
         return False
 
-    all_rows = requests_offers_table_element.find_elements(By.TAG_NAME, "tr")
     processed_any_request = False
 
     i = 0
-    while i < len(all_rows):
-        row = all_rows[i]
+    while True:
+        # Re-locate table and rows on every pass (prevents stales)
+        table = _find_element(By.XPATH, requests_offers_table_xpath, timeout=2)
+        if not table:
+            break
+        rows = table.find_elements(By.TAG_NAME, "tr")
+        if i >= len(rows):
+            break
+
         try:
-            new_marker_b_tag = row.find_element(By.XPATH, ".//b[text()='NEW']")
-            if new_marker_b_tag:
-                if i + 1 < len(all_rows):
-                    content_row = all_rows[i + 1]
-                    title_element_check = content_row.find_element(By.XPATH, ".//strong[@class='title']")
+            row = rows[i]
 
-                    title_element = content_row.find_element(By.XPATH, ".//strong[@class='title']")
-                    time_element = content_row.find_element(By.XPATH, ".//span[@class='time']")
-                    label_element = content_row.find_element(By.TAG_NAME, "label")
+            # Is this a NEW marker row?
+            try:
+                _ = row.find_element(By.XPATH, ".//b[text()='NEW']")
+            except StaleElementReferenceException:
+                # DOM changed — retry same index with fresh refs
+                time.sleep(0.2)
+                continue
+            except NoSuchElementException:
+                # Not a NEW row, advance
+                i += 1
+                continue
 
-                    entry_title = title_element.text.strip()
-                    entry_time = time_element.text.strip()
+            # Consume the content row right after the marker, using fresh refs
+            if i + 1 >= len(rows):
+                print("Found 'NEW' marker but no subsequent content row. Skipping.")
+                i += 1
+                continue
 
-                    entry_content = global_vars.driver.execute_script(
-                        """
-                        var labelElem = arguments[0];
-                        var contentText = '';
-                        var foundTimeSpan = false;
-                        for (var i = 0; i < labelElem.childNodes.length; i++) {
-                            var node = labelElem.childNodes[i];
-                            if (node.nodeType === 1 && node.tagName.toLowerCase() === 'span' && node.className === 'time') {
-                                foundTimeSpan = true;
-                            } else if (foundTimeSpan) {
-                                if (node.nodeType === 3) {
-                                    contentText += node.textContent.trim();
-                                } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'strong') { // Changed 'and' to '&&'
-                                    contentText += node.innerText.trim() + ' ';
-                                } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'br') { // Changed 'and' to '&&'
-                                    contentText += '\\n';
-                                }
-                            }
-                        }
-                        return contentText.trim().replace(/\\s\\s+/g, ' ');
-                        """,
-                        label_element
-                    )
-                    entry_content = entry_content.strip()
+            content_row = rows[i + 1]
+            try:
+                # Touch a child so Selenium revalidates the element
+                _ = content_row.find_element(By.XPATH, ".//strong[@class='title']")
+            except StaleElementReferenceException:
+                time.sleep(0.2)
+                continue
 
-                    # Accepting lawyer rep if enabled
-                    accept_lawyer_rep(entry_content)
+            title_el = content_row.find_element(By.XPATH, ".//strong[@class='title']")
+            time_el = content_row.find_element(By.XPATH, ".//span[@class='time']")
+            label_el = content_row.find_element(By.TAG_NAME, "label")
 
-                    # Accepting blind eye offer
-                    accept_blind_eye_offer(entry_content)
+            entry_title = title_el.text.strip()
+            entry_time = time_el.text.strip()
 
-                    print(f"Processing NEW Request/Offer - Title: '{entry_title}', Time: '{entry_time}'")
-                    full_discord_message = f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}"
-                    send_discord_notification(full_discord_message)
-                    print(f"Sent request/offer to Discord: '{entry_title}'.")
-                    processed_any_request = True
-                    i += 1
-                else:
-                    print("Found 'NEW' marker but no subsequent content row for Request/Offer. Skipping.")
+            entry_content = global_vars.driver.execute_script("""
+                var labelElem = arguments[0];
+                var contentText = ''; var foundTimeSpan = false;
+                for (var i = 0; i < labelElem.childNodes.length; i++) {
+                    var node = labelElem.childNodes[i];
+                    if (node.nodeType === 1 && node.tagName.toLowerCase() === 'span' && node.className === 'time') {
+                        foundTimeSpan = true;
+                    } else if (foundTimeSpan) {
+                        if (node.nodeType === 3) contentText += node.textContent.trim();
+                        else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'strong') contentText += node.innerText.trim() + ' ';
+                        else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'br') contentText += '\\n';
+                    }
+                }
+                return contentText.trim().replace(/\s\s+/g,' ');
+            """, label_el).strip()
 
-        except NoSuchElementException:
-            pass
+            # Handle offers (these will refresh the DOM)
+            accept_lawyer_rep(entry_content)
+            accept_blind_eye_offer(entry_content)
+
+            print(f"Processing NEW Request/Offer - Title: '{entry_title}', Time: '{entry_time}'")
+            send_discord_notification(f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}")
+            print(f"Sent request/offer to Discord: '{entry_title}'.")
+
+            # Give the DOM a moment to refresh, then restart loop from the top
+            time.sleep(0.25)
+            i = 0
+            processed_any_request = True
+            continue
+
+        except StaleElementReferenceException:
+            # Keep logs tidy; don't dump Selenium's full stack
+            print("Row went stale while parsing Requests/Offers; re-fetching and retrying…")
+            time.sleep(0.2)
+            continue
         except Exception as e:
-            print(f"ERROR parsing Request/Offer entry: {e}. Skipping row.")
-        i += 1
+            print(f"ERROR parsing Request/Offer row {i}: {getattr(e, 'msg', e)}. Skipping.")
+            i += 1
+            continue
+
     return processed_any_request
+
 
 def process_unread_journal_entries(player_data):
     """
