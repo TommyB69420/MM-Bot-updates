@@ -174,7 +174,7 @@ def get_enabled_configs(location):
     "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False),
     "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False),
     "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients', fallback=False) and location == home_city and occupation in ["Bank Teller", "Loan Officer", "Bank Manager"],
-    "do_auto_promo_enabled": config.getboolean('Misc', 'TakePromo', fallback=True) and (next_rank_pct == 100),
+    "do_auto_promo_enabled": config.getboolean('Misc', 'TakePromo', fallback=True) and (next_rank_pct == 95),
 }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs, next_rank_pc):
@@ -392,7 +392,7 @@ while True:
         print("Player is in jail. Entering jail work loop...")
 
         while is_player_in_jail():
-            # --- Critical Checks ---
+            # check for script checks and logouts in jail
             if perform_critical_checks(character_name):
                 continue
 
@@ -465,8 +465,6 @@ while True:
         print(f"Auto Promo timer ({promo_check_time_remaining:.2f}s) is ready. Attempting auto-promotion...")
         if take_promotion():
             action_performed_in_cycle = True
-        else:
-            print("Auto Promo: no action performed or failed.")
 
     if perform_critical_checks(character_name):
         continue

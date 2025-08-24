@@ -1092,30 +1092,38 @@ def customs_blind_eyes():
         print("FAILED: Commit Crime button not found/clickable")
         return False
 
-    # On blindeye.asp, pick a player in the dropdown and click 'Turn a Blind Eye'. Try a specific form first, then a general fallback
-    select_xpath = "//form[@action='blindeye.asp']//select | //div[@id='holder_content']//form//select"
-    options = _get_dropdown_options(By.XPATH, select_xpath) or []
+    # On blindeye.asp, select a target from the dropdown, then submit
+    select_xpath = ("//form[@action='blindeye.asp']//select[@name='gangster'] | "
+                    "//div[@id='holder_content']//form//select[@name='gangster']")
 
-    # Build list of valid, non-placeholder entries
+    # Read options, filter out placeholders
+    options = _get_dropdown_options(By.XPATH, select_xpath) or []
     valid = []
     for opt in options:
         t = (opt or "").strip()
+        if not t:
+            continue
         low = t.lower()
-        if not t or low.startswith(("select", "choose", "—", "-", "please")):
+        if low.startswith(("please", "select", "choose", "—", "-", "–")):
             continue
         valid.append(t)
 
-    # If there are no valid blind eye requests, set a short retry cooldown and bail
     if not valid:
         print("No valid Blind Eye targets available. Setting short retry cooldown.")
-        global_vars._script_trafficking_cooldown_end_time = (datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120)))
+        global_vars._script_trafficking_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(
+            seconds=random.uniform(60, 120))
         return False
 
+    # Pick the first valid name (e.g., 'WarN30Days') and APPLY it to the <select>
     choice = valid[0]
+    if not _select_dropdown_option(By.XPATH, select_xpath, choice):
+        print(f"FAILED: Could not select '{choice}' from the dropdown.")
+        return False
 
-    # Finally, submit: usually name='B1' or value text containing 'Turn a Blind Eye'
-    if not _find_and_click(
-        By.XPATH, "//input[@type='submit' and (@name='B1' or contains(@value,'Turn a Blind Eye'))]"):
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    # Now click 'Turn a Blind Eye'
+    if not _find_and_click(By.XPATH, "//input[@type='submit' and (@name='B1' or contains(@value,'Turn a Blind Eye'))]"):
         print("FAILED: 'Turn a Blind Eye' submit not found/clickable")
         return False
 
