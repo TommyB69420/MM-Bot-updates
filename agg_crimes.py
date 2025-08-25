@@ -9,7 +9,7 @@ from selenium.webdriver.support.select import Select
 from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, remove_player_cooldown
 import global_vars
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, \
-    _find_element, community_service_queue_count, _get_element_text_quiet
+    _find_element, community_service_queue_count, _get_element_text_quiet, enqueue_community_services
 from misc_functions import transfer_money
 from timer_functions import parse_game_datetime
 from comms_journals import send_discord_notification
