@@ -169,6 +169,15 @@ def get_all_active_game_timers():
         if short_retry_remaining > 0:
             timers['aggravated_crime_time_remaining'] = max(timers['aggravated_crime_time_remaining'], short_retry_remaining)
 
+    try:
+        from helper_functions import community_service_queue_count
+        if community_service_queue_count() > 0:
+            timers['aggravated_crime_time_remaining'] = max(
+                timers['aggravated_crime_time_remaining'],
+                timers.get('action_time_remaining', 0))
+    except Exception:
+        pass
+
     # Assign recheck timers directly, as they are derived from script-managed end times
     timers['torch_recheck_time_remaining'] = torch_recheck_remaining
     timers['armed_robbery_recheck_time_remaining'] = armed_robbery_recheck_remaining

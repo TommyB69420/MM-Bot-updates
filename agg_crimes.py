@@ -371,6 +371,7 @@ def execute_aggravated_crime_logic(player_data):
     # Hard block: cannot attempt AgCrime while Services are queued
     if community_service_queue_count() > 0:
         print("Aggravated Crime blocked: mandatory Community Service queued. Skipping until queue is cleared.")
+        global_vars._script_agg_crime_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
         return False
 
     do_hack = global_vars.config.getboolean('Hack', 'DoHack', fallback=False)

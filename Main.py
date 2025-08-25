@@ -593,26 +593,30 @@ while True:
         enabled_configs['do_pickpocket_enabled'],
         enabled_configs['do_mugging_enabled'],
         enabled_configs['do_armed_robbery_enabled'],
-        enabled_configs['do_torch_enabled']
+        enabled_configs['do_torch_enabled'],
     ]):
-        # Hack / Pickpocket / Mugging — check general timer only
+        # Hack / Pickpocket / Mugging — only if no mandatory CS queued
         if any([
             enabled_configs['do_hack_enabled'],
             enabled_configs['do_pickpocket_enabled'],
-            enabled_configs['do_mugging_enabled']
-        ]) and aggravated_crime_time_remaining <= 0:
+            enabled_configs['do_mugging_enabled'],
+        ]) and aggravated_crime_time_remaining <= 0 and community_service_queue_count() == 0:
             should_attempt_aggravated_crime = True
             print(f"Aggravated Crime (Hack/Pickpocket/Mugging) timer ({aggravated_crime_time_remaining:.2f}s) is ready. Attempting crime.")
 
-        # Armed Robbery — needs general + recheck timer
+        # Armed Robbery — only if no mandatory CS queued
         if enabled_configs['do_armed_robbery_enabled']:
-            if aggravated_crime_time_remaining <= 0 and armed_robbery_recheck_time_remaining <= 0:
+            if (aggravated_crime_time_remaining <= 0
+                    and armed_robbery_recheck_time_remaining <= 0
+                    and community_service_queue_count() == 0):
                 should_attempt_aggravated_crime = True
                 print("Armed Robbery timers are ready. Attempting crime.")
 
-        # Torch — needs general + recheck timer
+        # Torch — only if no mandatory CS queued
         if enabled_configs['do_torch_enabled']:
-            if aggravated_crime_time_remaining <= 0 and torch_recheck_time_remaining <= 0:
+            if (aggravated_crime_time_remaining <= 0
+                    and torch_recheck_time_remaining <= 0
+                    and community_service_queue_count() == 0):
                 should_attempt_aggravated_crime = True
                 print("Torch timers are ready. Attempting crime.")
 
