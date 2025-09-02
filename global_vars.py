@@ -6,6 +6,7 @@ import requests
 import configparser
 import subprocess
 import time
+import threading
 import json
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -65,7 +66,7 @@ if not is_debugger_running():
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
-            "--disable-blink-features=AutomationControlled"
+            #"--disable-blink-features=AutomationControlled"
         ])
     except Exception as e:
         print(f"Failed to launch Chrome: {e}")
@@ -172,6 +173,9 @@ initial_game_url = None
 
 # Global Variable to store if the script needs to reselect an earn after taking a promotion.
 force_reselect_earn = False
+
+# Global Variable that tells Main.py to pause while Discord uses Selenium
+DRIVER_LOCK = threading.RLock()
 
 # Global variables to store hacked player and amount for repayment
 hacked_player_for_repay = None
