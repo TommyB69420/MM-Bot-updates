@@ -1186,3 +1186,46 @@ def execute_smuggle_for_player(target_player: str) -> bool:
     except Exception as e:
         print(f"ERROR during smuggle flow: {e}")
         return False
+
+def mortician_autopsy():
+    """
+    Navigate to the income menu to Autopsy Work and, if available, do an autopsy.
+    If no autopsy radio is present, set a short case cooldown (60–80s).
+    """
+    print("\n--- Beginning Mortician Autopsy ---")
+
+    # Navigate to Autopsy page
+    if not _navigate_to_page_via_menu(
+        "//span[@class='income']",
+        "//a[normalize-space()='Autopsy Work']",
+        "Autopsy Work"):
+        print("FAILED: Could not open Autopsy Work.")
+        # keep it lightweight; brief backoff like other flows
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    # Look for an autopsy radio button
+    radio = _find_element(By.NAME, "autopsynum", timeout=1)
+    if radio:
+        try:
+            radio.click()
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS / 2)
+        except Exception as e:
+            print(f"ERROR: Could not click autopsy radio: {e}")
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 80))
+            return False
+
+        # Click submit (unsure on xpath, so using a variety seen across MM)
+        if _find_and_click(By.XPATH, "//input[@name='B1' or @type='submit' or @value='Continue']", pause=global_vars.ACTION_PAUSE_SECONDS):
+            print("Autopsy commenced successfully.")
+            return True
+        else:
+            print("FAILED: Continue/Submit button not found after selecting autopsy.")
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 80))
+            return False
+
+    # Set a cooldown if no autopsy found
+    cooldown = random.uniform(60, 80)
+    print(f"No autopsy available. Setting case cooldown for {cooldown:.2f}s.")
+    global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=cooldown)
+    return False

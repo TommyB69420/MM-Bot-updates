@@ -10,7 +10,7 @@ from agg_crimes import execute_aggravated_crime_logic, execute_yellow_pages_scan
 from earn_functions import execute_earns_logic, diligent_worker
 from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
     manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
-    customs_blind_eyes, execute_smuggle_for_player
+    customs_blind_eyes, execute_smuggle_for_player, mortician_autopsy
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
     blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
 from database_functions import init_local_db
@@ -76,7 +76,7 @@ def fetch_initial_player_data():
     return player_data
 
 def message_discord_on_startup():
-    """On process start (and first loop or two), if we're already in-game,
+    """On process start (and first loop), if we're already in-game,
     send the 'Script started for character: …' Discord message once."""
     if getattr(global_vars, "startup_login_ping_sent", False):
         return
@@ -280,6 +280,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
             active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
 
     # Career specific based on occupation
+    if occupation in ("Mortician", "Undertaker", "Funeral Director"):
+        active.append(('Autopsy Work', case))
     if enabled_configs['do_judge_cases_enabled']:
         active.append(('Judge Casework', case))
     if occupation == "Lawyer":
@@ -778,6 +780,12 @@ while True:
         if occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director") and case_time_remaining <= 0:
             print(f"Medical Casework timer ({case_time_remaining:.2f}s) is ready. Attempting medical cases.")
             if medical_casework(initial_player_data):
+                action_performed_in_cycle = True
+
+        # Mortician Autopsy Logic
+        if occupation in ("Mortician", "Undertaker", "Funeral Director") and case_time_remaining <= 0:
+            print(f"Autopsy timer is ready ({case_time_remaining:.2f}s) is ready. Attempting autopsy cases.")
+            if mortician_autopsy():
                 action_performed_in_cycle = True
 
         if perform_critical_checks(character_name):
