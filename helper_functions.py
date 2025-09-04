@@ -215,7 +215,6 @@ def is_player_in_jail():
 
     return False
 
-
 def enqueue_blind_eyes(n: int = 1):
     """Append n units to the Blind Eye queue."""
     os.makedirs(os.path.dirname(global_vars.BLIND_EYE_QUEUE_FILE), exist_ok=True)
@@ -260,5 +259,28 @@ def dequeue_community_service():
 def community_service_queue_count():
     """Current queued number of mandatory community services."""
     q = _read_json_file(global_vars.COMMUNITY_SERVICE_QUEUE_FILE) or []
+    return len(q) if isinstance(q, list) else 0
+
+def enqueue_funeral_smuggles(n: int = 1):
+    """Append n tokens to the Funeral Smuggle queue."""
+    os.makedirs(os.path.dirname(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE), exist_ok=True)
+    q = _read_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE) or []
+    if not isinstance(q, list):
+        q = []
+    q.extend(["queued"] * max(0, int(n)))
+    _write_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE, q)
+
+def dequeue_funeral_smuggle():
+    """Consume a single token from the Funeral Smuggle queue. Return True if dequeued."""
+    q = _read_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE) or []
+    if not isinstance(q, list) or not q:
+        return False
+    q.pop(0)
+    _write_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE, q)
+    return True
+
+def funeral_smuggle_queue_count():
+    """Current funeral smuggle queue count."""
+    q = _read_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE) or []
     return len(q) if isinstance(q, list) else 0
 

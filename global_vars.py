@@ -132,6 +132,7 @@ FIRE_TRAINING_DONE_FILE = os.path.join(COOLDOWN_DATA_DIR, "fire_training_done.js
 BLIND_EYE_QUEUE_FILE = os.path.join(COOLDOWN_DATA_DIR, "blind_eye_queue.json")
 COMMUNITY_SERVICE_QUEUE_FILE = os.path.join(COOLDOWN_DATA_DIR, "community_service_queue.json")
 DRUGS_LAST_CONSUMED_FILE =  os.path.join(COOLDOWN_DATA_DIR, "drugs_last_consumed.txt")
+FUNERAL_SMUGGLE_QUEUE_FILE = os.path.join(COOLDOWN_DATA_DIR, "funeral_smuggle_queue.json")
 
 # Define keys for database (aggravated_crime_cooldowns.json) entries
 MINOR_CRIME_COOLDOWN_KEY = 'minor_crime_cooldown'
@@ -176,6 +177,10 @@ force_reselect_earn = False
 
 # Global Variable that tells Main.py to pause while Discord uses Selenium
 DRIVER_LOCK = threading.RLock()
+
+# Discord-triggered smuggle state
+_smuggle_request_active = threading.Event()   # Set by Discord; consumed by Main loop
+_smuggle_request_target = None               # String: player name requested from Discord
 
 # Global variables to store hacked player and amount for repayment
 hacked_player_for_repay = None

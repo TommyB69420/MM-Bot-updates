@@ -50,9 +50,13 @@ def worker():
                     ok = reply_to_sender(job["to"], job["text"])
                     print(f"[DiscordBridge] reply_to_sender -> {job['to']} | {'OK' if ok else 'FAILED'}")
 
+
                 elif action == "smuggle":
-                    ok = execute_smuggle_for_player(job["target"])
-                    print(f"[DiscordBridge] smuggle -> {job['target']} | {'OK' if ok else 'FAILED'}")
+                    # Do NOT execute now; signal Main loop and let it run when timer/token allow.
+                    global_vars._smuggle_request_target = job["target"]
+                    global_vars._smuggle_request_active.set()
+                    ok = True
+                    print(f"[DiscordBridge] Smuggle request armed for '{job['target']}'. Awaiting trafficking timer & token.")
 
                 elif action == "sendmoney":
                     ok = execute_sendmoney_to_player(job["target"], job["amount"])

@@ -1,7 +1,8 @@
 import json
 import requests
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
-from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes
+from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes, \
+    enqueue_funeral_smuggles
 import math
 
 _PROCESSED_RO_KEYS = set()
@@ -296,6 +297,7 @@ def _process_requests_offers_entries():
             # Handle offers (these will refresh the DOM)
             accept_lawyer_rep(entry_content)
             accept_blind_eye_offer(entry_content)
+            accept_drug_smuggle(entry_content)
 
             # Only send once per *function call*
             key = f"{entry_time}|{entry_title}|{entry_content}".strip()
@@ -535,6 +537,21 @@ def accept_blind_eye_offer(entry_content: str):
     except Exception as e:
         print(f"Exception during blind eye acceptance attempt: {e}")
 
+def accept_drug_smuggle(entry_content):
+    """
+    If entry_content contains 'inside a dead body', attempts to click ACCEPT and queue a smuggle token.
+    """
+    try:
+        if "inside of a dead body" in entry_content.lower():
+            print("Detected drug smuggle offer. Attempting to accept it...")
+            if _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS):
+                enqueue_funeral_smuggles(1)
+                send_discord_notification("Accepted Drug Smuggle.")
+                print("Successfully accepted 'dead body' offer and queued 1 token.")
+            else:
+                print("FAILED to click ACCEPT for 'dead body' offer.")
+    except Exception as e:
+        print(f"Exception during dead body acceptance attempt: {e}")
 
 def check_into_hospital_for_surgery():
     """
@@ -550,8 +567,7 @@ def check_into_hospital_for_surgery():
     if not _navigate_to_page_via_menu(
             "//span[@class='city']",
             "//a[@class='business hospital']",
-            "Hospital"
-    ):
+            "Hospital"):
         print("FAILED: Could not navigate to Hospital.")
         return False
 

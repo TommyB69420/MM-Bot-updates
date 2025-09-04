@@ -10,7 +10,8 @@ from comms_journals import send_discord_notification
 from database_functions import _read_json_file, remove_player_cooldown, set_player_data
 from helper_functions import _find_and_send_keys, _find_and_click, _find_element, _navigate_to_page_via_menu, \
     _get_element_text, _get_element_attribute, _find_elements, _get_current_url, blind_eye_queue_count, \
-    _get_dropdown_options, _select_dropdown_option, dequeue_blind_eye, _find_elements_quiet
+    _get_dropdown_options, _select_dropdown_option, dequeue_blind_eye, _find_elements_quiet, dequeue_funeral_smuggle, \
+    funeral_smuggle_queue_count
 
 
 def community_services(player_data):
@@ -406,6 +407,7 @@ def judge_casework(player_data):
     """Manages and processes judge cases."""
     print("\n--- Beginning Judge Casework Operation ---")
 
+    # Navigate to judge page
     if not _navigate_to_page_via_menu(
             "//span[@class='court']",
             "//strong[normalize-space()='Assign sentences to pending cases']",
@@ -416,6 +418,7 @@ def judge_casework(player_data):
 
     print("Successfully navigated to Judge Cases Page. Checking for cases...")
 
+    # Read the case table
     cases_table = _find_element(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div[2]/form/table")
     if not cases_table:
         cooldown = random.uniform(60, 120)
@@ -423,26 +426,30 @@ def judge_casework(player_data):
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=cooldown)
         return False
 
+    # Process the table
     case_rows = cases_table.find_elements(By.TAG_NAME, "tr")[1:]
     processed_any_case = False
 
+    # Read settings.ini for who to skip cases on
     skip_players = {
         name.strip().lower()
         for name in global_vars.config.get('Judge', 'Skip_Cases_On_Player', fallback='').split(',')
         if name.strip()
     }
 
+    # Define the rows to look at in the judge table
     for row in case_rows:
         try:
             suspect_name = row.find_element(By.XPATH, ".//td[3]//a").text.strip()
             victim_name = row.find_element(By.XPATH, ".//td[4]//a").text.strip()
 
+            # Skip cases on yourself
             if player_data['Character Name'] in [suspect_name, victim_name]:
                 print(f"Skipping case for self (Suspect: {suspect_name}, Victim: {victim_name}).")
                 continue
-
-            if suspect_name.lower() in skip_players or victim_name.lower() in skip_players:
-                print(f"Skipping case due to player in skip list (Suspect: {suspect_name}, Victim: {victim_name}).")
+            # Skip names listed in settings.ini
+            if suspect_name.lower() in skip_players:
+                print(f"Skipping case due to player in skip list (Suspect: {suspect_name}.")
                 continue
 
             row.find_element(By.XPATH, ".//td[5]/input[@type='radio']").click()
@@ -451,6 +458,7 @@ def judge_casework(player_data):
             if not _find_and_click(By.XPATH, "//input[@name='B1']"):
                 continue
 
+            # Read the crime type
             crime_committed = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[3]/div/table/tbody/tr[1]/td[4]")
             if not crime_committed:
                 global_vars.driver.get("javascript:history.go(-2)")
@@ -473,6 +481,7 @@ def judge_casework(player_data):
             print(f"Exception during case processing: {e}")
             continue
 
+    # Set cooldown if no judge cases
     if not processed_any_case:
         cooldown = random.uniform(60, 120)
         print(f"No valid judge cases processed. Waiting {cooldown:.2f} seconds before retry.")
@@ -515,6 +524,7 @@ def process_judge_case_verdict(crime_committed, character_name):
     else:
         return False
 
+    # Click Submit
     if not _find_and_click(By.XPATH, "//input[@name='B1']"):
         return False
     return True
@@ -535,6 +545,7 @@ def lawyer_casework():
 
     print("Successfully navigated to Lawyer Cases Page. Checking for cases...")
 
+    # Read cases table
     cases_table_xpath = "/html/body/div[4]/div[4]/div[1]/div[2]/center/form/table"
     cases_table = _find_element(By.XPATH, cases_table_xpath)
 
@@ -1089,30 +1100,23 @@ def execute_smuggle_for_player(target_player: str) -> bool:
         if not _navigate_to_page_via_menu(
                 "//span[@class='income']",
                 "//a[normalize-space()='Aggravated Crimes']",
-                "Aggravated Crimes"
-        ):
+                "Aggravated Crimes"):
             print("FAILED: Could not open Aggravated Crimes.")
             return False
 
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-        # 2) Select radio id=smugglefuneral
+        # Select radio smuggle radio button from the aggravated crime page
         if not _find_and_click(By.XPATH, "//*[@id='smugglefuneral']"):
             print("FAILED: Could not select 'smugglefuneral' option.")
             return False
 
-        # 3) Click Commit Crime
+        # Click Commit Crime
         if not _find_and_click(By.XPATH, "//input[@name='B1']"):
             print("FAILED: Could not click 'Commit Crime'.")
             return False
 
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-
-        # Trafficking timer check (abort if the warning appears)
-        page_source = global_vars.driver.page_source or ""
-        if "You cannot commit an aggravated crime at this point in time! Make sure your Trafficking timer is ready" in page_source:
-            print("Traffick timer not ready try again later")
-            return False
 
         # On smuggle funeral page: select player from dropdown, click Continue
         dropdown_xpath = "//*[@id='AutoNumber4']/tbody/tr[5]/td[2]/p/select"
@@ -1162,13 +1166,21 @@ def execute_smuggle_for_player(target_player: str) -> bool:
                 print("FAILED: Could not select 'Smuggle the drugs into' option.")
                 return False
 
-        # Submit
+        # click Submit
         if not _find_and_click(By.XPATH, "//*[@id='AutoNumber4']/tbody/tr[8]/td[2]/p/input"):
             print("FAILED: Could not click Submit on final step.")
             return False
 
         time.sleep(global_vars.ACTION_PAUSE_SECONDS / 2)
         print(f"Smuggle flow completed for '{target_player}'.")
+        # Consume 1 token and notify
+        if dequeue_funeral_smuggle():
+            remaining = funeral_smuggle_queue_count()
+            send_discord_notification(f"Smuggled for '{target_player}'. Remaining smuggles remaining: {remaining}")
+            print(f"Smuggled for '{target_player}'. Remaining smuggle tokens: {remaining}")
+        else:
+            print("WARNING: Smuggle done but queue could not be decremented (empty or file issue).")
+
         return True
 
     except Exception as e:

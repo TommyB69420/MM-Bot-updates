@@ -10,9 +10,9 @@ from agg_crimes import execute_aggravated_crime_logic, execute_yellow_pages_scan
 from earn_functions import execute_earns_logic, diligent_worker
 from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
     manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
-    customs_blind_eyes
+    customs_blind_eyes, execute_smuggle_for_player
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
-    blind_eye_queue_count, community_service_queue_count, dequeue_community_service
+    blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
 from database_functions import init_local_db
 from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
@@ -280,7 +280,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
             active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
 
     # Career specific based on occupation
-    if cfg.getboolean('Judge', 'Do_Cases', fallback=False):
+    if enabled_configs['do_judge_cases_enabled']:
         active.append(('Judge Casework', case))
     if occupation == "Lawyer":
         active.append(('Lawyer Casework', case))
@@ -294,6 +294,10 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
         active.append(('Bank Casework', case))
     if ('customs' in (occupation or '').lower()) and location == home_city and queue_count > 0:
         active.append(('Blind Eye', trafficking))
+    if getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set():
+        smuggle_tokens = funeral_smuggle_queue_count()
+        if smuggle_tokens > 0:
+            active.append((f"Smuggle (queued {smuggle_tokens})", trafficking))
     if enabled_configs['do_bank_add_clients_enabled']:
         active.append(('Bank add clients', bank_add))
     if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
@@ -827,6 +831,28 @@ while True:
                     action_performed_in_cycle = True
             else:
                 print(f"Blind Eye queued ({queue_count}), but Trafficking timer not ready ({trafficking_time_remaining:.2f}s).")
+
+        # Funeral Smuggle (Discord-triggered) Logic
+        if global_vars._smuggle_request_active.is_set():
+            req_target = (global_vars._smuggle_request_target or "").strip()
+            token_count = funeral_smuggle_queue_count()
+            if not req_target:
+                print("[Smuggle] Request is armed but no target name set. Clearing flag for safety.")
+                global_vars._smuggle_request_active.clear()
+            else:
+                if token_count <= 0:
+                    print(f"[Smuggle] Request armed for '{req_target}', but no smuggle tokens available. Waiting for a token.")
+                elif trafficking_time_remaining <= 0:
+                    print(f"[Smuggle] Timer ready and {token_count} token(s) available. Attempting smuggle for '{req_target}'.")
+                    if execute_smuggle_for_player(req_target):
+                        # Clear the request flag on success (one request -> one smuggle)
+                        global_vars._smuggle_request_active.clear()
+                        action_performed_in_cycle = True
+                    else:
+                        print(f"[Smuggle] Smuggle attempt for '{req_target}' failed. Will retry when conditions allow.")
+                else:
+                    print(f"[Smuggle] Request armed for '{req_target}', but trafficking timer not ready "
+                          f"({trafficking_time_remaining:.2f}s).")
 
         # Bank Add Clients Logic
         if enabled_configs['do_bank_add_clients_enabled']:
