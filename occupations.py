@@ -925,8 +925,8 @@ def get_existing_banker_clients():
 
 def fire_casework(initial_player_data):
     """
-    Executes firefighting logic (Attend Fires and Fire Safety Inspections)
-    Uses case_time_remaining to throttle operations
+    Executes firefighting logic (Attend Fires, Fire Investigations, and Fire Safety Inspections).
+    Uses helper wrappers for safe waits/clicks and light logging.
     """
     print("\n--- Beginning Fire Station Logic ---")
 
@@ -941,39 +941,42 @@ def fire_casework(initial_player_data):
 
     print("SUCCESS: Navigated to Fire Station. Checking for active fires...")
 
-    # Attempt to find "Attend Fire" option
-    attend_fire_elements = _find_elements(By.XPATH, "//tbody/tr[2]/td[4]/a[1]")
-    if attend_fire_elements:
+    # Attend Fire
+    if _find_and_click(By.XPATH, "//tbody/tr[2]/td[4]/a[1]"):
         print("Found active fire. Attending...")
-        attend_fire_elements[0].click()
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-        return True
+        return True  # helper already paused
 
-    # Attempt to find "Investigate" option
+    # Fire Investigation
     print("No active fires found. Checking for Fire Investigations...")
-    investigate_links = _find_elements(By.XPATH, "//a[normalize-space()='Investigate']")
-    if investigate_links:
+    if _find_and_click(By.XPATH, "//a[normalize-space()='Investigate']"):
         print("Found Fire Investigation. Investigating...")
-        investigate_links[0].click()
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-        return True
+        return True  # helper already paused
 
-    # No investigations found. Try inspections.
+    # Fire Safety Inspections
     print("No Fire Investigations found. Checking for Fire Safety Inspections...")
     inspection_tab_xpath = "//a[normalize-space()='Fire safety inspections']"
     if not _find_and_click(By.XPATH, inspection_tab_xpath):
         print("FAILED: Could not navigate to Fire Safety Inspections tab.")
         return False
 
-    # Refresh the inspect link after navigating (avoid stale reference)
-    inspect_links = _find_elements(By.XPATH, "//a[normalize-space()='Inspect']")
+    # Refresh the Inspect links after tab navigation
+    inspect_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Inspect']")
+
+    your_name = (initial_player_data or {}).get("Character Name", "")
     for link in inspect_links:
-        parent_row = link.find_element(By.XPATH, "./ancestor::tr")
-        if initial_player_data.get("Character Name", "") not in parent_row.text:
-            print("Found eligible Fire Inspection task. Inspecting...")
+        try:
+            parent_row = link.find_element(By.XPATH, "./ancestor::tr")
+            # Skip inspections on your own character
+            if your_name and your_name in (parent_row.text or ""):
+                continue
+
+            # Click the specific link element
             link.click()
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            print("Found eligible Fire Inspection task. Inspecting...")
             return True
+        except Exception as e:
+            print(f"WARNING: Could not click an Inspect link: {e}")
 
     print("No valid fire inspections available. Setting fallback cooldown.")
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 48))

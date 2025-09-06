@@ -1084,7 +1084,7 @@ def fire_training():
     # Navigate to Fire Recruitment page
     if not _navigate_to_page_via_menu(
         "//span[@class='city']",
-        "//a[@class='business fire_station']",
+        "//a[@class='business fire']",
         "Fire Training"):
         return False
 
