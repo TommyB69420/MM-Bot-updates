@@ -181,6 +181,7 @@ def get_enabled_configs(location):
     "do_hack_enabled": config.getboolean('Hack', 'DoHack', fallback=False),
     "do_pickpocket_enabled": config.getboolean('PickPocket', 'DoPickPocket', fallback=False),
     "do_mugging_enabled": config.getboolean('Mugging', 'DoMugging', fallback=False),
+    "do_bne_enabled": config.getboolean('BnE', 'DoBnE', fallback=False),
     "do_armed_robbery_enabled": config.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False),
     "do_torch_enabled": config.getboolean('Torch', 'DoTorch', fallback=False),
     "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ["Judge", "Supreme Court Judge"] and location == home_city,
@@ -266,7 +267,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
     active.append(('Funeral Parlour Scan', fps))
 
     # Aggravated Crime logic
-    if any(cfg.getboolean(section, f'Do{key}', fallback=False) for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging')]):
+    if any(cfg.getboolean(section, f'Do{key}', fallback=False)
+           for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging'), ('BnE', 'BnE')]):
         active.append(('Aggravated Crime (General)', aggro))
     elif cfg.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False):
         if aggro > global_vars.ACTION_PAUSE_SECONDS:
@@ -658,14 +660,16 @@ while True:
             enabled_configs['do_hack_enabled'],
             enabled_configs['do_pickpocket_enabled'],
             enabled_configs['do_mugging_enabled'],
+            enabled_configs['do_bne_enabled'],
             enabled_configs['do_armed_robbery_enabled'],
             enabled_configs['do_torch_enabled'],
         ]):
-            # Hack / Pickpocket / Mugging — only if no mandatory CS queued
+            # Hack / Pickpocket / Mugging / BnE — only if no mandatory CS queued
             if any([
                 enabled_configs['do_hack_enabled'],
                 enabled_configs['do_pickpocket_enabled'],
                 enabled_configs['do_mugging_enabled'],
+                enabled_configs['do_bne_enabled'],
             ]) and aggravated_crime_time_remaining <= 0 and community_service_queue_count() == 0:
                 should_attempt_aggravated_crime = True
                 print(f"Aggravated Crime (Hack/Pickpocket/Mugging) timer ({aggravated_crime_time_remaining:.2f}s) is ready. Attempting crime.")

@@ -1,6 +1,8 @@
 import json
 import requests
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+
+from database_functions import set_player_apartment
 from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes, \
     enqueue_funeral_smuggles
 import math
@@ -419,13 +421,13 @@ def process_unread_journal_entries(player_data):
 
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
 
-                        # Flu check (unchanged)
+                        # Flu check
                         if "you have a slightly nauseous feeling in your" in entry_content.lower():
                             if check_into_hospital_for_surgery():
                                 print("Checked into hospital, stopping journal processing.")
                                 return True
 
-                        # --- Auto drug offers ---
+                        #  Auto accept drug offers
                         if "has offered you some drugs to purchase" in entry_content.lower():
                             print("Detected journal drug offer - processing…")
                             handled = drug_offers(player_data)
@@ -435,6 +437,11 @@ def process_unread_journal_entries(player_data):
                                 i = 0
                                 time.sleep(0.2)
                                 continue
+
+                        # If BnE Witness record apartment type in aggravated_crime_cooldown.json
+                        if "get broken into" in entry_content.lower() and "you witnessed" in entry_content.lower():
+                            if _record_bne_witness_apartment(entry_content):
+                                processed_any_new = True
 
                         combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
 
@@ -977,3 +984,36 @@ def _clean_amount(amount_str: str) -> int | None:
         return val if val > 0 else None
     except Exception:
         return None
+
+def _record_bne_witness_apartment(entry_content: str) -> bool:
+    """
+    If the journal text says:
+      "You witnessed <name>`s <Flat|Studio Unit|Penthouse|Palace> get broken into!"
+    extract <name> and apartment, then persist it to aggravated_crime_cooldown.json.
+    Returns True if we updated, False otherwise.
+    """
+    try:
+        # Match both "'s" and "`s"
+        m = re.search(
+            r"You witnessed\s+(?P<name>.+?)(?:'|`)s\s+(?P<apt>Flat|Studio Unit|Penthouse|Palace)\s+get broken into!",
+            entry_content,
+            re.IGNORECASE
+        )
+        if not m:
+            return False
+
+        name = (m.group('name') or '').strip()
+        apt = (m.group('apt') or '').strip()
+        if not name or not apt:
+            return False
+
+        set_player_apartment(name, apt)  # normalizes internally via your DB layer
+        print(f"[Journal] Witnessed BnE: set apartment for {name} -> {apt}")
+        try:
+            send_discord_notification(f"Witnessed BnE: recorded {name}'s apartment as {apt}.")
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"[Journal] Error parsing witness BnE line: {e}")
+        return False

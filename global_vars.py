@@ -104,7 +104,7 @@ except Exception as e:
 
 # --- Global Configurations ---
 EXPLICIT_WAIT_SECONDS = random.uniform(2, 3) # This is a wait for specific elements to appear, preventing TimeoutException when elements load dynamically.
-ACTION_PAUSE_SECONDS = random.uniform(0.5, 1.5) # This is an unconditional sleep between actions, primarily for pacing and simulating human interaction.
+ACTION_PAUSE_SECONDS = random.uniform(0.4, 0.8) # This is an unconditional sleep between actions, primarily for pacing and simulating human interaction.
 wait = WebDriverWait(driver, EXPLICIT_WAIT_SECONDS)
 MIN_POLLING_INTERVAL_LOWER = 40
 MIN_POLLING_INTERVAL_UPPER = 80
@@ -186,6 +186,11 @@ _smuggle_request_target = None               # String: player name requested fro
 hacked_player_for_repay = None
 hacked_amount_for_repay = None
 hacked_successful = False
+
+# Global variables to store BnE players and amount for repayment
+bne_player_for_repay = None
+bne_amount_for_repay = None
+bne_successful = False
 
 # Global variables to store pickpocketed player and amount for repayment
 pickpocketed_player_for_repay = None

@@ -3,6 +3,7 @@ import random
 import re
 import time
 from selenium.common import NoSuchElementException, TimeoutException
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
@@ -182,8 +183,9 @@ def _open_aggravated_crime_page(crime_type):
         "Hack": "//input[@type='radio' and @value='hack' and @name='agcrime']",
         "Pickpocket": "//input[@type='radio' and @value='pickpocket' and @name='agcrime']",
         "Mugging": "//input[@id='mugging']",
+        "BnE": "//input[@id='breaking']",
         "Torch": "//input[@type='radio' and @value='torchbusiness' and @name='agcrime']",
-        "Armed Robbery": "//input[@type='radio' and @value='armed' and @name='agcrime']"
+        "Armed Robbery": "//input[@type='radio' and @value='armed' and @name='agcrime']",
     }
 
     if not _find_and_click(By.XPATH, radio_button_xpath[crime_type]):
@@ -387,6 +389,11 @@ def execute_aggravated_crime_logic(player_data):
     mugging_min = global_vars.config.getint('Mugging', 'min_amount', fallback=1)
     mugging_max = global_vars.config.getint('Mugging', 'max_amount', fallback=100)
 
+    do_bne = global_vars.config.getboolean('BnE', 'DoBnE', fallback=False)
+    bne_repay = global_vars.config.getboolean('BnE', 'Repay', fallback=True)
+    raw_target_apartments = global_vars.config.get('BnE', 'BnETarget', fallback='')
+    bne_target_apartments = [apt.strip().lower() for apt in raw_target_apartments.split(',') if apt.strip()]
+
     do_armed_robbery = global_vars.config.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False)
     do_torch = global_vars.config.getboolean('Torch', 'DoTorch', fallback=False)
 
@@ -422,7 +429,8 @@ def execute_aggravated_crime_logic(player_data):
         'Pickpocket': do_pickpocket,
         'Mugging': do_mugging,
         'Armed Robbery': do_armed_robbery,
-        'Torch': do_torch
+        'Torch': do_torch,
+        'BnE': do_bne,
     }.items() if enabled_status]
 
     if not enabled_crimes:
@@ -578,6 +586,54 @@ def execute_aggravated_crime_logic(player_data):
             elif status in ['failed_password', 'failed_attempt', 'general_error']:
                 print(f"{crime_type} failed for {target_attempted} (status: {status}). Exiting attempts for this cycle.")
                 break
+
+    # BnE
+    elif crime_type == "BnE":
+        if not _open_aggravated_crime_page("BnE"):
+            return False
+
+        attempts_in_cycle = 0
+        max_attempts_per_cycle = 60
+        tried_players_in_cycle = set()
+
+        current_city = player_data.get("Location")
+        character_name = player_data.get("Character Name")
+
+        while attempts_in_cycle < max_attempts_per_cycle:
+            # First try with the configured apartment filter (if any)
+            current_target_player = _get_suitable_bne_target(
+                current_city, character_name, tried_players_in_cycle, apartment_filters=bne_target_apartments)
+
+            # Fallback to anyone if a filter was set but no target found
+            if not current_target_player and bne_target_apartments:
+                print(f"No BnE targets with apartments {bne_target_apartments}. Falling back to any apartment.")
+                current_target_player = _get_suitable_bne_target(current_city, character_name, tried_players_in_cycle, apartment_filters=None)
+
+            if not current_target_player:
+                print("No more suitable BnE targets found in the database for this cycle.")
+                retry_minutes = random.randint(3, 5)
+                global_vars._script_aggravated_crime_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(
+                    minutes=retry_minutes)
+                print(f"Will retry BnE in {retry_minutes} minutes.")
+                break
+
+            attempts_in_cycle += 1
+            crime_attempt_initiated = True
+            status, target_attempted, amount_stolen = _perform_bne_attempt(current_target_player, repay_enabled=bne_repay)
+
+            if status == 'success':
+                print("BnE successful! Exiting attempts for this cycle.")
+                break
+
+            elif status == 'failed_attempt':
+                print("BnE attempt failed. Exiting attempts for this cycle.")
+                break
+
+            elif status in ['cooldown_target', 'no_apartment', 'general_error']:
+                tried_players_in_cycle.add(target_attempted)
+                if not _open_aggravated_crime_page("BnE"):
+                    print("FAILED: Failed to re-open BnE page. Cannot continue attempts for this cycle.")
+                    break
 
     # Armed Robbery
     elif crime_type == "Armed Robbery":
@@ -1188,3 +1244,155 @@ def _search_yellow_pages_for_occupation(occupation_search_term, current_city):
     print(f"No owner found for '{occupation_search_term}' in '{current_city}' via Yellow Pages.")
     global_vars.driver.get(initial_url)
     return None
+
+def _get_suitable_bne_target(current_location, character_name, excluded_players, apartment_filters=None):
+    """
+    Returns a player whose stored home_city == current_location,
+    apartment is in apartment_filters (if provided), and whose
+    minor_crime_cooldown is free/expired.
+
+    apartment_filters: list[str] (case-insensitive), or None/[] for any.
+    """
+    data = _read_json_file(global_vars.COOLDOWN_FILE) or {}
+    now = datetime.datetime.now()
+
+    # Normalize filters once (lowercase for case-insensitive compare)
+    filters = [f.strip().lower() for f in (apartment_filters or []) if f and f.strip()]
+
+    player_ids = list(data.keys())
+    random.shuffle(player_ids)
+
+    for pid in player_ids:
+        if pid == character_name or (excluded_players and pid in excluded_players):
+            continue
+
+        pdata = data.get(pid) or {}
+        if pdata.get(global_vars.PLAYER_HOME_CITY_KEY) != current_location:
+            continue
+
+        # Apartment filter (if any)
+        if filters:
+            apt = (pdata.get('apartment') or '').strip().lower()
+            if apt not in filters:
+                continue
+
+        cd = get_player_cooldown(pid, global_vars.MINOR_CRIME_COOLDOWN_KEY)
+        if cd is None or (now - cd).total_seconds() >= 0:
+            return pid
+
+    return None
+
+
+def _perform_bne_attempt(target_player_name, repay_enabled=False):
+    """
+    Performs a single Breaking & Entering attempt.
+    Assumes we are already on the BnE page (via _open_aggravated_crime_page("BnE")).
+    Returns status, target_name, amount_or_None
+      status in {'success','failed_attempt','cooldown_target','no_apartment','general_error'}
+    """
+    # Clear any previous “current crime” repay markers (guarded in case globals don’t exist yet)
+    try:
+        global_vars.bne_player_for_repay = None
+        global_vars.bne_amount_for_repay = None
+        global_vars.bne_successful = False
+    except Exception:
+        pass
+
+    # Fill the form and submit
+    if not _find_and_send_keys(By.XPATH, "//input[@name='breaking']", target_player_name):
+        return 'general_error', target_player_name, None
+    # Dismiss/accept the suggestion popup so it doesn't cover the button
+    try:
+        name_input = _find_element(By.XPATH, "//input[@name='breaking']")
+        if name_input:
+            # Try to select the first suggestion and accept it
+            name_input.send_keys(Keys.ARROW_DOWN)
+            time.sleep(0.05)
+            name_input.send_keys(Keys.ENTER)
+            time.sleep(0.05)
+    except Exception:
+        pass
+
+    # click a neutral area to blur the input (collapses popup)
+    _find_and_click(By.XPATH, "//div[@id='content']", pause=0.1)
+
+    if not _find_and_click(By.XPATH, "//input[@name='B1']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+        return 'general_error', target_player_name, None
+
+    result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]") or ""
+    now = datetime.datetime.now()
+
+    # SUCCESS CASE. Example: "You managed to break-into T-reks`s Palace and after turning the place up, found yourself $1,448!"
+    m = re.search(
+        r"You managed to break-into (?P<name>.+?)(?:'|`)s (?P<apt>Flat|Studio Unit|Penthouse|Palace) .*?found yourself \$?(?P<amt>[0-9,]+)!",
+        result_text, re.IGNORECASE
+    )
+    if m:
+        name = (m.group('name') or '').strip()
+        apt = (m.group('apt') or '').strip()
+        try:
+            stolen = int((m.group('amt') or '0').replace(',', ''))
+        except Exception:
+            stolen = 0
+
+        # Success cooldown: 1h40m–2h10m
+        cd = now + datetime.timedelta(seconds=random.uniform(100 * 60, 130 * 60))
+        set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
+
+        # Optional repay bookkeeping
+        try:
+            if repay_enabled:
+                global_vars.bne_player_for_repay = name
+                global_vars.bne_amount_for_repay = stolen
+                global_vars.bne_successful = True
+        except Exception:
+            pass
+
+        log_aggravated_event("BnE", name, "Success", stolen)
+        if "also managed to" in result_text.lower():
+            repay_status = f"Repay = {'True' if repay_enabled else 'False'}"
+            try:
+                send_discord_notification(f"BnE: extra loot found!\n{repay_status}\n\n{result_text}")
+            except Exception as e:
+                print(f"[BnE] Failed to send Discord notification for extra loot: {e}")
+
+        print(f"[BnE] SUCCESS: {name} | {apt} | ${stolen:,}")
+        return 'success', name, stolen
+
+    # FAILED ATTEMPT. Example: "You attempted to break into WeToddDid's Palace and failed!"
+    m = re.search(
+        r"You attempted to break into (?P<name>.+?)(?:'|`)s (?P<apt>Flat|Studio Unit|Penthouse|Palace) and failed!",
+        result_text, re.IGNORECASE
+    )
+    if m:
+        name = (m.group('name') or '').strip()
+        apt = (m.group('apt') or '').strip()
+        cd = now + datetime.timedelta(seconds=random.uniform(100*60, 130*60))  # 1h40m–2h10m
+        set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
+        log_aggravated_event("BnE", name, "Failed", 0)
+        print(f"[BnE] FAILED: {name} | {apt}. Cooldown until {cd.strftime('%H:%M:%S')}.")
+        return 'failed_attempt', name, None
+
+    # RECENTLY SURVIVED (crime NOT completed)
+    if ("recently survived an aggravated crime" in result_text.lower()) or ("try them again later" in result_text.lower()):
+        cd = now + datetime.timedelta(minutes=5)
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
+        print(f"[BnE] BLOCKED (recently survived): {target_player_name}. Retry after {cd.strftime('%H:%M:%S')}.")
+        return 'cooldown_target', target_player_name, None
+
+    # NO APARTMENT
+    if "doesnt have an apartment" in result_text.lower() or "doesn't have an apartment" in result_text.lower():
+        cd = now + datetime.timedelta(hours=24)
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment="No Apartment")
+        print(f"[BnE] NO APARTMENT: {target_player_name}. Cooldown set 24h.")
+        return 'no_apartment', target_player_name, None
+
+    # FALLBACK if unexpected result
+    short_cd = now + datetime.timedelta(seconds=random.uniform(30, 60))
+    set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, short_cd)
+    log_aggravated_event("BnE", target_player_name, f"Unexpected Result: {result_text}", 0)
+    debug_text = re.sub(r"\s+", " ", result_text).strip().lower()
+    print(f"[BnE] Unrecognized result for '{target_player_name}'. "
+          f"Short cooldown applied. Result text: {debug_text}")
+    return 'general_error', target_player_name, None
+

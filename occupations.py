@@ -926,7 +926,6 @@ def get_existing_banker_clients():
 def fire_casework(initial_player_data):
     """
     Executes firefighting logic (Attend Fires, Fire Investigations, and Fire Safety Inspections).
-    Uses helper wrappers for safe waits/clicks and light logging.
     """
     print("\n--- Beginning Fire Station Logic ---")
 
@@ -942,35 +941,51 @@ def fire_casework(initial_player_data):
     print("SUCCESS: Navigated to Fire Station. Checking for active fires...")
 
     # Attend Fire
-    if _find_and_click(By.XPATH, "//tbody/tr[2]/td[4]/a[1]"):
+    attend_fire_links = _find_elements_quiet(By.XPATH, "//tbody/tr[2]/td[4]/a[1]")
+    if attend_fire_links:
         print("Found active fire. Attending...")
-        return True  # helper already paused
+        try:
+            attend_fire_links[0].click()
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            return True
+        except Exception as e:
+            print(f"WARNING: Could not click Attend Fire link: {e}")
 
     # Fire Investigation
     print("No active fires found. Checking for Fire Investigations...")
-    if _find_and_click(By.XPATH, "//a[normalize-space()='Investigate']"):
+    investigate_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Investigate']")
+    if investigate_links:
         print("Found Fire Investigation. Investigating...")
-        return True  # helper already paused
+        try:
+            investigate_links[0].click()
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            return True
+        except Exception as e:
+            print(f"WARNING: Could not click Investigate link: {e}")
 
     # Fire Safety Inspections
     print("No Fire Investigations found. Checking for Fire Safety Inspections...")
-    inspection_tab_xpath = "//a[normalize-space()='Fire safety inspections']"
-    if not _find_and_click(By.XPATH, inspection_tab_xpath):
-        print("FAILED: Could not navigate to Fire Safety Inspections tab.")
+    inspection_tab_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Fire safety inspections']")
+    if not inspection_tab_links:
+        print("FAILED: Could not find Fire Safety Inspections tab.")
         return False
 
-    # Refresh the Inspect links after tab navigation
-    inspect_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Inspect']")
+    try:
+        inspection_tab_links[0].click()
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    except Exception as e:
+        print(f"WARNING: Could not click Fire Safety Inspections tab: {e}")
+        return False
 
+    # Inspect tasks (skip your own character)
+    inspect_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Inspect']")
     your_name = (initial_player_data or {}).get("Character Name", "")
     for link in inspect_links:
         try:
             parent_row = link.find_element(By.XPATH, "./ancestor::tr")
-            # Skip inspections on your own character
             if your_name and your_name in (parent_row.text or ""):
                 continue
 
-            # Click the specific link element
             link.click()
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
             print("Found eligible Fire Inspection task. Inspecting...")

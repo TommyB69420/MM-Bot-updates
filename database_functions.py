@@ -44,6 +44,7 @@ def init_local_db():
         print(f"Error initializing local database: {e}")
         return False
 
+
 def _read_json_file(file_path):
     """Reads JSON data from a file."""
     try:
@@ -59,6 +60,7 @@ def _read_json_file(file_path):
         print(f"Error reading JSON data from {file_path}: {e}")
         return {}
 
+
 def _write_json_file(file_path, data):
     """Writes JSON data to a file."""
     try:
@@ -66,6 +68,7 @@ def _write_json_file(file_path, data):
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Error writing JSON data to {file_path}: {e}")
+
 
 def _read_text_file(file_path):
     """Reads text data from a file."""
@@ -83,6 +86,7 @@ def _read_text_file(file_path):
         return None
     return None
 
+
 def get_player_cooldown(player_id, cooldown_type):
     """Retrieves a player's specific cooldown end time from the database."""
     data = _read_json_file(COOLDOWN_FILE)
@@ -96,19 +100,28 @@ def get_player_cooldown(player_id, cooldown_type):
             return None
     return None
 
-def set_player_data(player_id, cooldown_type=None, cooldown_end_time=None, home_city=None):
-    """Sets or updates a player's specific cooldown end time and/or home city."""
+
+def set_player_data(player_id, cooldown_type=None, cooldown_end_time=None, home_city=None, apartment=None):
+    """Sets or updates a player's cooldown/home city/apartment in the local DB JSON."""
     data = _read_json_file(COOLDOWN_FILE)
     if player_id not in data:
         data[player_id] = {}
 
     if cooldown_type and cooldown_end_time is not None:
+        # Keep your existing datetime format for cooldowns
         data[player_id][cooldown_type] = cooldown_end_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+
     if home_city is not None:
-        data[player_id][PLAYER_HOME_CITY_KEY] = home_city
+        data[player_id]['home_city'] = home_city  # same key style as existing
+
+    if apartment is not None:
+        # Normalise so trim and title-case so values are consistent (e.g. "palace" to "Palace")
+        normalized = (apartment or '').strip().title()
+        data[player_id]['apartment'] = normalized
 
     _write_json_file(COOLDOWN_FILE, data)
     return True
+
 
 def remove_player_cooldown(player_id, cooldown_type=None):
     """Removes a player's specific cooldown entry, or all cooldowns if the type is None."""
@@ -127,6 +140,7 @@ def remove_player_cooldown(player_id, cooldown_type=None):
         return True
     return False
 
+
 def _get_last_timestamp(file_path):
     """Reads a timestamp from a given file."""
     try:
@@ -143,6 +157,7 @@ def _get_last_timestamp(file_path):
         return None
     return None
 
+
 def _set_last_timestamp(file_path, timestamp):
     """Writes a timestamp to a given file."""
     try:
@@ -150,6 +165,7 @@ def _set_last_timestamp(file_path, timestamp):
             f.write(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"))
     except Exception as e:
         print(f"Error writing text data to {file_path}: {e}")
+
 
 def get_all_degrees_status():
     """Reads the status of all degrees from all_degrees.json in game_data"""
@@ -168,6 +184,7 @@ def get_all_degrees_status():
         print(f"Error reading all degrees status from {ALL_DEGREES_FILE}: {e}")
         return False
 
+
 def set_all_degrees_status(status):
     """Writes the status of all degrees to all_degrees.json."""
     try:
@@ -175,6 +192,7 @@ def set_all_degrees_status(status):
             json.dump(status, f, indent=4)
     except Exception as e:
         print(f"Error writing all degrees status to {ALL_DEGREES_FILE}: {e}")
+
 
 def _get_last_weapon_shop_check_timestamp():
     """Reads the last weapon shop check timestamp from a file. CAN I REMOVE THIS"""
@@ -185,3 +203,8 @@ def _get_last_weapon_shop_check_timestamp():
     except FileNotFoundError:
         pass
     return None
+
+
+def set_player_apartment(player_id, apartment):
+    """Convenience wrapper to persist an apartment value for a player."""
+    return set_player_data(player_id, apartment=apartment)
