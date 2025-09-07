@@ -778,14 +778,13 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
 
     if "The name you typed in doesn't exist!" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
-        set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
+        remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
 
     if "no money in their account" in result_text:
         # Allow the transfer+retry only once per target (for this cycle)
         if target_player_name in retried_targets:
-            print(
-                f"INFO: Target '{target_player_name}' still has no money and retry already used. Skipping further retries.")
+            print(f"INFO: Target '{target_player_name}' still has no money and retry already used. Skipping further retries.")
             set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1))
             return 'no_money', target_player_name, None
 

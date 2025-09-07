@@ -124,7 +124,7 @@ def set_player_data(player_id, cooldown_type=None, cooldown_end_time=None, home_
 
 
 def remove_player_cooldown(player_id, cooldown_type=None):
-    """Removes a player's specific cooldown entry, or all cooldowns if the type is None."""
+    """Removes a player's specific entry, or all cooldowns if the type is None."""
     data = _read_json_file(COOLDOWN_FILE)
     if player_id in data:
         if cooldown_type:
