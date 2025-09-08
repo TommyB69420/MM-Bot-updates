@@ -622,6 +622,8 @@ def execute_aggravated_crime_logic(player_data):
             status, target_attempted, amount_stolen = _perform_bne_attempt(current_target_player, repay_enabled=bne_repay)
 
             if status == 'success':
+                if bne_repay and global_vars.bne_player_for_repay and global_vars.bne_amount_for_repay:
+                    _repay_player(global_vars.bne_player_for_repay, global_vars.bne_amount_for_repay)
                 print("BnE successful! Exiting attempts for this cycle.")
                 break
 
