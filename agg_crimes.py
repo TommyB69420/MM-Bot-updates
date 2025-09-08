@@ -629,7 +629,7 @@ def execute_aggravated_crime_logic(player_data):
                 print("BnE attempt failed. Exiting attempts for this cycle.")
                 break
 
-            elif status in ['cooldown_target', 'no_apartment', 'general_error', 'wrong_city']:
+            elif status in ['cooldown_target', 'no_apartment', 'general_error', 'wrong_city', 'non_existent_target']:
                 tried_players_in_cycle.add(target_attempted)
                 if not _open_aggravated_crime_page("BnE"):
                     print("FAILED: Failed to re-open BnE page. Cannot continue attempts for this cycle.")
@@ -1289,6 +1289,7 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
     Returns status, target_name, amount_or_None
       status in {'success','failed_attempt','cooldown_target','no_apartment','general_error'}
     """
+
     # Clear any previous “current crime” repay markers (guarded in case globals don’t exist yet)
     try:
         global_vars.bne_player_for_repay = None
@@ -1320,79 +1321,83 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
 
     result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]") or ""
     now = datetime.datetime.now()
+    clean = result_text.lower()
 
-    # SUCCESS CASE. Example: "You managed to break-into T-reks`s Palace and after turning the place up, found yourself $1,448!"
-    m = re.search(
-        r"You managed to break-into (?P<name>.+?)(?:'|`)s (?P<apt>Flat|Studio Unit|Penthouse|Palace) .*?found yourself \$?(?P<amt>[0-9,]+)!",
-        result_text, re.IGNORECASE
-    )
-    if m:
-        name = (m.group('name') or '').strip()
-        apt = (m.group('apt') or '').strip()
+    # SUCCESS CASE
+    if "you managed to break" in clean:
         try:
-            stolen = int((m.group('amt') or '0').replace(',', ''))
-        except Exception:
-            stolen = 0
+            # Parse stolen amount
+            amt_match = re.search(r"found yourself \$?([\d,]+)", result_text, re.IGNORECASE)
+            stolen = int(amt_match.group(1).replace(',', '')) if amt_match else 0
 
-        # Success cooldown: 1h40m–2h10m
-        cd = now + datetime.timedelta(seconds=random.uniform(100 * 60, 130 * 60))
-        set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
+            # Parse apartment type if present
+            apt_match = re.search(r"(Flat|Studio Unit|Penthouse|Palace)", result_text, re.IGNORECASE)
+            apt = apt_match.group(1) if apt_match else "Unknown"
 
-        # Optional repay bookkeeping
-        try:
+            # Parse target name up to the apostrophe
+            name_match = re.search(r"break[- ]?into (.+?)(?:'|`)", result_text, re.IGNORECASE)
+            name = name_match.group(1).strip() if name_match else target_player_name
+
+            # Success cooldown: 1h40m–2h10m
+            cd = now + datetime.timedelta(seconds=random.uniform(100 * 60, 130 * 60))
+            set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
+
             if repay_enabled:
                 global_vars.bne_player_for_repay = name
                 global_vars.bne_amount_for_repay = stolen
                 global_vars.bne_successful = True
-        except Exception:
-            pass
 
-        log_aggravated_event("BnE", name, "Success", stolen)
-        if "also managed to" in result_text.lower():
-            repay_status = f"Repay = {'True' if repay_enabled else 'False'}"
-            try:
-                send_discord_notification(f"BnE: extra loot found!\n{repay_status}\n\n{result_text}")
-            except Exception as e:
-                print(f"[BnE] Failed to send Discord notification for extra loot: {e}")
+            log_aggravated_event("BnE", name, "Success", stolen)
+            print(f"[BnE] SUCCESS: {name} | {apt} | ${stolen:,}")
+            return 'success', name, stolen
+        except Exception as e:
+            print(f"[BnE] ERROR parsing success: {e}")
+            return 'general_error', target_player_name, None
 
-        print(f"[BnE] SUCCESS: {name} | {apt} | ${stolen:,}")
-        return 'success', name, stolen
+    # FAILED ATTEMPT
+    if "attempted to break" in clean:
+        try:
+            apt_match = re.search(r"(Flat|Studio Unit|Penthouse|Palace)", result_text, re.IGNORECASE)
+            apt = apt_match.group(1) if apt_match else "Unknown"
 
-    # FAILED ATTEMPT. Example: "You attempted to break into WeToddDid's Palace and failed!"
-    m = re.search(
-        r"You attempted to break into (?P<name>.+?)(?:'|`)s (?P<apt>Flat|Studio Unit|Penthouse|Palace) and failed!",
-        result_text, re.IGNORECASE
-    )
-    if m:
-        name = (m.group('name') or '').strip()
-        apt = (m.group('apt') or '').strip()
-        cd = now + datetime.timedelta(seconds=random.uniform(100*60, 130*60))  # 1h40m–2h10m
-        set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
-        log_aggravated_event("BnE", name, "Failed", 0)
-        print(f"[BnE] FAILED: {name} | {apt}. Cooldown until {cd.strftime('%H:%M:%S')}.")
-        return 'failed_attempt', name, None
+            name_match = re.search(r"into (.+?)(?:'|`)", result_text, re.IGNORECASE)
+            name = name_match.group(1).strip() if name_match else target_player_name
 
-    # RECENTLY SURVIVED (crime NOT completed)
-    if ("recently survived an aggravated crime" in result_text.lower()) or ("try them again later" in result_text.lower()):
+            cd = now + datetime.timedelta(seconds=random.uniform(100 * 60, 130 * 60))  # 1h40m–2h10m
+            set_player_data(name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment=apt)
+            log_aggravated_event("BnE", name, "Failed", 0)
+            print(f"[BnE] FAILED: {name} | {apt}. Cooldown until {cd.strftime('%H:%M:%S')}.")
+            return 'failed_attempt', name, None
+        except Exception as e:
+            print(f"[BnE] ERROR parsing fail: {e}")
+            return 'general_error', target_player_name, None
+
+    # RECENTLY SURVIVED
+    if "try them again later" in result_text.lower():
         cd = now + datetime.timedelta(minutes=5)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
         print(f"[BnE] BLOCKED (recently survived): {target_player_name}. Retry after {cd.strftime('%H:%M:%S')}.")
         return 'cooldown_target', target_player_name, None
 
     # NO APARTMENT
-    if "doesnt have an apartment" in result_text.lower() or "doesn't have an apartment" in result_text.lower():
+    if "have an apartment" in result_text.lower():
         cd = now + datetime.timedelta(hours=24)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment="No Apartment")
         print(f"[BnE] NO APARTMENT: {target_player_name}. Cooldown set 24h.")
         return 'no_apartment', target_player_name, None
 
     # WRONG CITY (victim's apartment not in your city)
-    if " city as your victim's apartment!" in result_text.lower():
+    if "city as your victim" in result_text.lower():
         cd = now + datetime.timedelta(hours=24)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
         print(f"[BnE] WRONG CITY / MOVED APARTMENT: {target_player_name}. 24h minor cooldown set.")
         return 'wrong_city', target_player_name, None
 
+    # NON-EXISTENT TARGET
+    if "the name you typed in" in result_text.lower():
+        print(f"[BnE] Target '{target_player_name}' does not exist. Removing from cooldown DB.")
+        remove_player_cooldown(target_player_name)
+        return 'non_existent_target', target_player_name, None
 
     # FALLBACK if unexpected result
     short_cd = now + datetime.timedelta(seconds=random.uniform(30, 60))
