@@ -629,7 +629,7 @@ def execute_aggravated_crime_logic(player_data):
                 print("BnE attempt failed. Exiting attempts for this cycle.")
                 break
 
-            elif status in ['cooldown_target', 'no_apartment', 'general_error']:
+            elif status in ['cooldown_target', 'no_apartment', 'general_error', 'wrong_city']:
                 tried_players_in_cycle.add(target_attempted)
                 if not _open_aggravated_crime_page("BnE"):
                     print("FAILED: Failed to re-open BnE page. Cannot continue attempts for this cycle.")
@@ -1386,12 +1386,17 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
         print(f"[BnE] NO APARTMENT: {target_player_name}. Cooldown set 24h.")
         return 'no_apartment', target_player_name, None
 
+    # WRONG CITY (victim's apartment not in your city)
+    if " city as your victim's apartment!" in result_text.lower():
+        cd = now + datetime.timedelta(hours=24)
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
+        print(f"[BnE] WRONG CITY / MOVED APARTMENT: {target_player_name}. 24h minor cooldown set.")
+        return 'wrong_city', target_player_name, None
+
+
     # FALLBACK if unexpected result
     short_cd = now + datetime.timedelta(seconds=random.uniform(30, 60))
     set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, short_cd)
-    log_aggravated_event("BnE", target_player_name, f"Unexpected Result: {result_text}", 0)
-    debug_text = re.sub(r"\s+", " ", result_text).strip().lower()
-    print(f"[BnE] Unrecognized result for '{target_player_name}'. "
-          f"Short cooldown applied. Result text: {debug_text}")
+    log_aggravated_event("BnE", target_player_name, "Unexpected Result", 0)
+    print(f"[BnE] Unrecognized result for '{target_player_name}'. Short cooldown applied.")
     return 'general_error', target_player_name, None
-
