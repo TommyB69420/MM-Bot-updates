@@ -124,18 +124,10 @@ def set_player_data(player_id, cooldown_type=None, cooldown_end_time=None, home_
 
 
 def remove_player_cooldown(player_id, cooldown_type=None):
-    """Removes a player's specific entry, or all cooldowns if the type is None."""
+    """Completely removes a player's record from the cooldown database."""
     data = _read_json_file(COOLDOWN_FILE)
     if player_id in data:
-        if cooldown_type:
-            if cooldown_type in data[player_id]:
-                del data[player_id][cooldown_type]
-                if not data[player_id]:
-                    del data[player_id]
-            else:
-                return False
-        else:
-            del data[player_id]
+        del data[player_id]   # Always delete the entire entry
         _write_json_file(COOLDOWN_FILE, data)
         return True
     return False

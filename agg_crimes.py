@@ -778,7 +778,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
         return 'cooldown_target', target_player_name, None
 
-    if "The name you typed in doesn't exist!" in result_text:
+    if "name you typed in" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
         remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
