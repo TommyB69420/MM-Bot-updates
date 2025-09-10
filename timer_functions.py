@@ -75,6 +75,7 @@ def get_all_active_game_timers():
         'check_weapon_shop_time_remaining': 0,
         'check_drug_store_time_remaining': 0,
         'check_bionics_store_time_remaining': 0,
+        'casino_slots_time_remaining': 0,
         'gym_trains_time_remaining': 0,
         'promo_check_time_remaining': 0,
         'consume_drugs_time_remaining': 0,
@@ -143,6 +144,14 @@ def get_all_active_game_timers():
         timers['check_bionics_store_time_remaining'] = max(0, bios_time_remaining)
     else:
         timers['check_bionics_store_time_remaining'] = 0.0 # If never checked, check immediately
+
+    # Casino Slots Check Timer
+    next_casino_check = _get_last_timestamp(global_vars.CASINO_NEXT_CHECK_FILE)
+    if next_casino_check:
+        casino_time_remaining = (next_casino_check - current_time).total_seconds()
+        timers['casino_slots_time_remaining'] = max(0, casino_time_remaining)
+    else:
+        timers['casino_slots_time_remaining'] = 0.0  # If never set, ready now
 
     # Consume Drugs Timer
     next_consume_drugs = _get_last_timestamp(global_vars.DRUGS_LAST_CONSUMED_FILE)
@@ -316,6 +325,11 @@ def get_all_active_game_timers():
     script_weapon_shop_remaining = (global_vars._script_weapon_shop_cooldown_end_time - current_time).total_seconds()
     if script_weapon_shop_remaining > 0:
         timers['check_weapon_shop_time_remaining'] = max(timers.get('check_weapon_shop_time_remaining', 0), script_weapon_shop_remaining)
+
+    # Casino Slots Cooldown (script-managed)
+    script_casino_slots_remaining = (global_vars._script_casino_slots_cooldown_end_time - current_time).total_seconds()
+    if script_casino_slots_remaining > 0:
+        timers['casino_slots_time_remaining'] = max(timers.get('casino_slots_time_remaining', 0), script_casino_slots_remaining)
 
     # Consume Drugs Cooldown
     script_consume_drugs_remaining = (global_vars._script_consume_drugs_cooldown_end_time - current_time).total_seconds()

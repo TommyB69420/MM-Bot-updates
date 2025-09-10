@@ -7,7 +7,8 @@ from selenium.common import NoSuchElementException, StaleElementReferenceExcepti
 from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import send_discord_notification, _clean_amount
-from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, _get_dropdown_options, _select_dropdown_option, _find_and_send_keys, _get_current_url
+from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, \
+    _get_dropdown_options, _select_dropdown_option, _find_and_send_keys, _get_current_url, _get_element_text_quiet
 from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, _read_json_file, _write_json_file
 from timer_functions import get_all_active_game_timers
 
@@ -1435,7 +1436,7 @@ def execute_sendmoney_to_player(target_player: str, amount_str: str) -> bool:
             print("You have insufficient funds")  # or "Invalid amount"; using provided phrasing constraints
             return False
 
-        # 1) Navigate to Bank
+        # Navigate to Bank
         if not _navigate_to_page_via_menu(
                 "//span[@class='income']",
                 "//a[normalize-space()='Bank']",
@@ -1452,7 +1453,7 @@ def execute_sendmoney_to_player(target_player: str, amount_str: str) -> bool:
 
         time.sleep(global_vars.ACTION_PAUSE_SECONDS / 2)
 
-        # Fill amount & player
+        # Fill amount and player
         amount_xpath = "//input[@name='transferamount']"
         name_xpath = "//input[@name='transfername']"
         transfer_btn_xpath = "//input[@id='B1']"
@@ -1463,7 +1464,7 @@ def execute_sendmoney_to_player(target_player: str, amount_str: str) -> bool:
             print("FAILED: Transfer inputs not found.")
             return False
 
-        # Clear and type
+        # Clear and send keys to amount text box
         if not _find_and_send_keys(By.XPATH, amount_xpath, str(amt)):
             print("FAILED: Could not enter transfer amount.")
             return False
@@ -1497,3 +1498,70 @@ def execute_sendmoney_to_player(target_player: str, amount_str: str) -> bool:
     except Exception as e:
         print(f"ERROR during sendmoney flow: {e}")
         return False
+
+def casino_slots():
+    """
+    Plays $100 slots repeatedly until the game warns about addiction, then sets a 25h cooldown.
+    """
+    print("\n--- Beginning Casino Slots Operation ---")
+
+    now = datetime.datetime.now()
+
+    # Navigate to City page then Casino
+    if not _navigate_to_page_via_menu(
+        "//span[@class='city']",
+        "//a[@class='business casino']",
+        "Casino"
+    ):
+        print("FAILED: Could not navigate to Casino.")
+        # short, randomised recheck to avoid hammering when torched
+        global_vars._script_casino_slots_cooldown_end_time = now + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    # Select Slots radio button, click submit
+    if not _find_and_click(By.XPATH, "//input[@id='slot']"):
+        print("FAILED: Could not select 'Slots' radio.")
+        global_vars._script_casino_slots_cooldown_end_time = now + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    if not _find_and_click(By.XPATH, "//input[@name='B1']"):
+        print("FAILED: Could not click initial submit to enter Slots.")
+        global_vars._script_casino_slots_cooldown_end_time = now + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    # On the Slots page: enter $100, then submit repeatedly until 'get an addiction' shows in //div[@id='fail']
+    if not _find_and_send_keys(By.XPATH, "//input[@name='bet']", "100"):
+        print("FAILED: Could not enter $100 bet.")
+        global_vars._script_casino_slots_cooldown_end_time = now + datetime.timedelta(seconds=random.uniform(30, 90))
+        return False
+
+    print("Starting $100 spins. Will stop when addiction warning appears...")
+
+    submit_xpath = "//input[@name='B1']"
+    fail_xpath = "//div[@id='fail']"
+
+    spins = 0
+    while True:
+        # Check for the addiction message
+        msg = _get_element_text_quiet(By.XPATH, fail_xpath, timeout=0.25)
+        if msg and 'get an addiction' in msg.lower():
+            print("Addiction warning detected — stopping slots.")
+            # Set 25h cooldown in file and script timer
+            next_time = datetime.datetime.now() + datetime.timedelta(hours=25)
+            _set_last_timestamp(global_vars.CASINO_NEXT_CHECK_FILE, next_time)
+            global_vars._script_casino_slots_cooldown_end_time = next_time
+            print(f"Casino Slots cooldown set until {next_time.strftime('%Y-%m-%d %H:%M:%S')}.")
+            return True
+
+        # Otherwise, click submit again
+        if not _find_and_click(By.XPATH, submit_xpath):
+            print("FAILED: Could not click spin submit button.")
+            # Short fallback cooldown; we’ll try again shortly
+            global_vars._script_casino_slots_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 60))
+            return False
+
+        spins += 1
+        if spins % 10 == 0:
+            print(f"Spins so far: {spins}")

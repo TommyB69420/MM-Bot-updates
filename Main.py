@@ -19,7 +19,7 @@ from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
 from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
     clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training, combat_training, fire_training, \
-    customs_training, take_promotion, consume_drugs
+    customs_training, take_promotion, consume_drugs, casino_slots
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -187,11 +187,11 @@ def get_enabled_configs(location):
     "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ["Judge", "Supreme Court Judge"] and location == home_city,
     "do_launders_enabled": config.getboolean('Launder', 'DoLaunders', fallback=False),
     "do_manufacture_drugs_enabled": config.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False),
-    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False),
+    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location ==home_city,
     "do_event_enabled": config.getboolean('Misc', 'DoEvent', fallback=False),
     "do_weapon_shop_check_enabled": config.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False),
+    "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False) and location == home_city and occupation in ["Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"],
     "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any ("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower(),
@@ -200,6 +200,7 @@ def get_enabled_configs(location):
     "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients', fallback=False) and location == home_city and occupation in ["Bank Teller", "Loan Officer", "Bank Manager"],
     "do_auto_promo_enabled": config.getboolean('Misc', 'TakePromo', fallback=True) and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown")),
     "do_consume_drugs_enabled": config.getboolean('Drugs', 'ConsumeCocaine', fallback=False) and location == home_city,
+    "do_slots_enabled": config.getboolean('Misc', 'DoSlots', fallback=False) and any("Casino" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs, next_rank_pc):
@@ -236,6 +237,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
     trafficking = get_timer('trafficking_time_remaining')
     auto_promo = get_timer('promo_check_time_remaining')
     consume_drugs = get_timer('consume_drugs_time_remaining')
+    casino = get_timer('casino_slots_time_remaining')
 
     cfg = global_vars.config
     businesses = global_vars.private_businesses
@@ -249,7 +251,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
         active.append(('Diligent Worker', skill))
     if cfg.getboolean('Actions Settings', 'CommunityService', fallback=False):
         active.append(('Community Service', action))
-    if cfg.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location == home_city:
+    if enabled_configs.get('do_university_degrees_enabled'):
         active.append(('Study Degree', action))
     if cfg.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False):
         active.append(('Manufacture Drugs', action))
@@ -266,7 +268,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
     active.append(('Yellow Pages Scan', yps))
     active.append(('Funeral Parlour Scan', fps))
 
-    # Aggravated Crime logic
+    # Aggravated Crime timers
     if any(cfg.getboolean(section, f'Do{key}', fallback=False)
            for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging'), ('BnE', 'BnE')]):
         active.append(('Aggravated Crime (General)', aggro))
@@ -304,7 +306,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
             active.append((f"Smuggle (queued {smuggle_tokens})", trafficking))
     if enabled_configs['do_bank_add_clients_enabled']:
         active.append(('Bank add clients', bank_add))
-    if cfg.getboolean('Fire', 'DoFireDuties', fallback=False):
+    if enabled_configs['do_firefighter_duties_enabled']:
         active.append(('Firefighter Duties', action))
     if cfg.getboolean('Police', 'Post911', fallback=False) and occupation in ["Police Officer"] and location == home_city:
         active.append(('Post 911', post_911))
@@ -323,6 +325,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
         active.append(('Gym Trains', gym))
     if cfg.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in b for c, b in businesses.items() if c == location):
         active.append(('Check Bionics Shop', bionics))
+    if enabled_configs.get('do_slots_enabled'):
+        active.append(('Casino Slots', casino))
 
     print("--- Timers Under Consideration for Sleep Duration ---")
     for name, timer_val in active:
@@ -511,6 +515,7 @@ while True:
     check_bionics_store_time_remaining = all_timers.get('check_bionics_store_time_remaining', float('inf'))
     promo_check_time_remaining = all_timers.get('promo_check_time_remaining', float('inf'))
     consume_drugs_time_remaining = all_timers.get('consume_drugs_time_remaining', float('inf'))
+    casino_slots_time_remaining = all_timers.get('casino_slots_time_remaining', float('inf'))
 
     # Career specific timers
     bank_add_clients_time_remaining = all_timers.get('bank_add_clients_time_remaining', float('inf'))
@@ -605,7 +610,7 @@ while True:
             continue
 
         # Study Degrees Logic
-        if enabled_configs['do_university_degrees_enabled'] and location == home_city and action_time_remaining <= 0:
+        if enabled_configs['do_university_degrees_enabled'] and action_time_remaining <= 0:
             print(f"Study Degree timer ({action_time_remaining:.2f}s) is ready. Attempting Study Degree.")
             if study_degrees():
                 action_performed_in_cycle = True
@@ -672,7 +677,7 @@ while True:
                 enabled_configs['do_bne_enabled'],
             ]) and aggravated_crime_time_remaining <= 0 and community_service_queue_count() == 0:
                 should_attempt_aggravated_crime = True
-                print(f"Aggravated Crime (Hack/Pickpocket/Mugging) timer ({aggravated_crime_time_remaining:.2f}s) is ready. Attempting crime.")
+                print(f"Aggravated Crime timer ({aggravated_crime_time_remaining:.2f}s) is ready. Attempting crime.")
 
             # Armed Robbery — only if no mandatory CS queued
             if enabled_configs['do_armed_robbery_enabled']:
@@ -743,6 +748,12 @@ while True:
 
         if perform_critical_checks(character_name):
             continue
+
+        # Casino Slots logic
+        if enabled_configs.get('do_slots_enabled') and casino_slots_time_remaining <= 0:
+            print("Casino Slots timer ready. Attempting to play until addiction warning.")
+            if casino_slots():
+                action_performed_in_cycle = True
 
         # Do Drug Store Check Logic
         if enabled_configs['do_drug_store_enabled'] and check_drug_store_time_remaining <= 0:
