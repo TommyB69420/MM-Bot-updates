@@ -1351,6 +1351,11 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
 
             log_aggravated_event("BnE", name, "Success", stolen)
             print(f"[BnE] SUCCESS: {name} | {apt} | ${stolen:,}")
+
+            # If an item was also stolen, push the full success string to Discord with the repay flag state
+            if "you also managed" in result_text.lower():
+                repay_flag = "ON" if repay_enabled else "OFF"
+                send_discord_notification(f"[BnE] ITEM STOLEN — Repay {repay_flag}\n{result_text.strip()}")
             return 'success', name, stolen
         except Exception as e:
             print(f"[BnE] ERROR parsing success: {e}")
