@@ -501,6 +501,11 @@ def execute_aggravated_crime_logic(player_data):
                 if not _open_aggravated_crime_page("Hack"):
                     print(f"FAILED: Failed to re-open {crime_type} page. Cannot continue attempts for this cycle.")
                     break
+
+            elif status == 'aggs_blocked':
+                print(f"[{crime_type}] Blocked due to too many fails. Standing down for 30 minutes.")
+                break
+
             elif status in ['failed_password', 'failed_attempt', 'failed_proxy', 'general_error']:
                 print(f"{crime_type} failed for {target_attempted} (status: {status}). Exiting attempts for this cycle.")
                 break
@@ -542,6 +547,12 @@ def execute_aggravated_crime_logic(player_data):
                 if not _open_aggravated_crime_page(crime_type):
                     print(f"FAILED: Failed to re-open {crime_type} page. Cannot continue attempts for this cycle.")
                     break
+
+            elif status == 'aggs_blocked':
+                print(f"[{crime_type}] Blocked due to too many fails. Standing down for 30 minutes.")
+                break
+
+
             elif status in ['failed_password', 'failed_attempt', 'general_error']:
                 print(f"{crime_type} failed for {target_attempted} (status: {status}). Exiting attempts for this cycle.")
                 break
@@ -583,6 +594,11 @@ def execute_aggravated_crime_logic(player_data):
                 if not _open_aggravated_crime_page(crime_type):
                     print(f"FAILED: Failed to re-open {crime_type} page. Cannot continue attempts for this cycle.")
                     break
+
+            elif status == 'aggs_blocked':
+                print(f"[{crime_type}] Blocked due to too many fails. Standing down for 30 minutes.")
+                break
+
             elif status in ['failed_password', 'failed_attempt', 'general_error']:
                 print(f"{crime_type} failed for {target_attempted} (status: {status}). Exiting attempts for this cycle.")
                 break
@@ -636,6 +652,10 @@ def execute_aggravated_crime_logic(player_data):
                 if not _open_aggravated_crime_page("BnE"):
                     print("FAILED: Failed to re-open BnE page. Cannot continue attempts for this cycle.")
                     break
+
+            elif status == 'aggs_blocked':
+                print(f"[{crime_type}] Blocked due to too many fails. Standing down for 30 minutes.")
+                break
 
     # Armed Robbery
     elif crime_type == "Armed Robbery":
@@ -712,12 +732,19 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
         print(f"Target '{target_player_name}' is not online. Skipping pickpocketing.")
         return 'not_online', target_player_name, None
 
-    if "The name you typed in doesn't exist!" in result_text:
+    if "The name you typed in doesn't exist" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
         return 'non_existent_target', target_player_name, None
 
-    if "The victim must be in the same city as you!" in result_text:
+    # FAILED TOO MANY RECENTLY
+    if "as you have failed too many" in (result_text or "").lower():
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return 'aggs_blocked', None, None
+
+    if "The victim must be in the same city as you" in result_text:
         print(f"INFO: Target '{target_player_name}' is not in the same city.")
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
         return 'wrong_city', target_player_name, None
@@ -738,7 +765,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
             log_aggravated_event(crime_type, target_player_name, "Script Error (Parse Success)", 0)
             return 'general_error', target_player_name, None
 
-    if "and failed!" in result_text:
+    if "and failed" in result_text:
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1, minutes=10))
         log_aggravated_event(crime_type, target_player_name, "Failed", 0)
         return 'failed_attempt', target_player_name, None
@@ -774,7 +801,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
 
     now = datetime.datetime.now()
 
-    if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
+    if "recently survived an aggravated crime" in result_text:
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
         return 'cooldown_target', target_player_name, None
 
@@ -782,6 +809,13 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
         print(f"INFO: Target '{target_player_name}' does not exist.")
         remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
+
+    # Failed too many recently
+    if "as you have failed too many" in (result_text or "").lower():
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return 'aggs_blocked', None, None
 
     if "no money in their account" in result_text:
         # Allow the transfer+retry only once per target (for this cycle)
@@ -829,7 +863,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
             log_aggravated_event(crime_type, target_player_name, "Script Error (Parse Success)", 0)
             return 'general_error', target_player_name, None
 
-    if "could not guess their password!" in result_text:
+    if "could not guess their password" in result_text:
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=12))
         log_aggravated_event(crime_type, target_player_name, "Failed", 0)
         return 'failed_password', target_player_name, None
@@ -904,7 +938,7 @@ def _perform_armed_robbery_attempt(player_data, selected_business_name=None):
 
     # --- Knockout handling ---
     knockout_text = _get_element_text(By.XPATH, "//span[@class='large']")
-    if knockout_text and "It knocked you right out!" in global_vars.driver.page_source:
+    if knockout_text and "It knocked you right out" in global_vars.driver.page_source:
         print(f"Knockout detected! Timer string: '{knockout_text}'")
 
         release_time = parse_game_datetime(knockout_text)
@@ -929,6 +963,16 @@ def _perform_armed_robbery_attempt(player_data, selected_business_name=None):
             print("Failed to parse knockout release time. Proceeding with default logic.")
 
     # --- Result cases ---
+
+    now = datetime.datetime.now()
+
+    # Failed too many
+    if "as you have failed too many" in (result_text or "").lower():
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return False
+
     if "You managed to hold up the" in result_text:
         try:
             business_match = re.search(r'hold up the (.+?)(?: and| -| nothing|!| for \$|$)', result_text)
@@ -1057,8 +1101,6 @@ def _perform_torch_attempt(player_data):
         log_aggravated_event("Torch", selected_business_name, "Script Error (No Result Msg)", 0)
         return True
 
-    now = datetime.datetime.now()
-
     if "managed to set ablaze" in result_text:
         try:
             print(f"Torch success result_text: {result_text}")
@@ -1108,12 +1150,20 @@ def _perform_torch_attempt(player_data):
         global_vars.torch_successful = False
         return True
 
-    elif "That business is your own business!" in result_text:
+    elif "That business is your own" in result_text:
         print(f"Attempted to torch own business: {selected_business_name}. Setting long cooldown for this target.")
         log_aggravated_event("Torch", selected_business_name, "Own Business", 0)
         global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(days=1)
         global_vars.torch_successful = False
         return True
+
+    # Failed too many
+    elif "as you have failed too many" in result_text:
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        now = datetime.datetime.now()
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return False
 
     elif "failed" in result_text or "ran off" in result_text:
         print(f"Torch attempt at {selected_business_name} failed.")
@@ -1151,7 +1201,7 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
 
     now = datetime.datetime.now()
 
-    if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
+    if "try them again later" in result_text:
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=5))
         return 'cooldown_target', target_player_name, None
 
@@ -1159,15 +1209,23 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
         print(f"Target '{target_player_name}' is not online. Skipping pickpocketing.")
         return 'not_online', target_player_name, None
 
-    if "The name you typed in doesn't exist!" in result_text:
+    if "The name you typed in" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
         return 'non_existent_target', target_player_name, None
 
-    if "The victim must be in the same city as you!" in result_text:
+    if "The victim must be in the same" in result_text:
         print(f"INFO: Target '{target_player_name}' is not in the same city.")
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
         return 'wrong_city', target_player_name, None
+
+    # Failed too many
+    if "as you have failed too many" in result_text.lower():
+        now = datetime.datetime.now()
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return 'aggs_blocked', None, None
 
     if f"You mugged" in result_text and "for $" in result_text:
         try:
@@ -1383,7 +1441,7 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
     if "try them again later" in result_text.lower():
         cd = now + datetime.timedelta(minutes=5)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
-        print(f"[BnE] BLOCKED (recently survived): {target_player_name}. Retry after {cd.strftime('%H:%M:%S')}.")
+        print(f"[BnE] AGG PRO: {target_player_name}. Retry after {cd.strftime('%H:%M:%S')}.")
         return 'cooldown_target', target_player_name, None
 
     # NO APARTMENT
@@ -1405,6 +1463,14 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
         print(f"[BnE] Target '{target_player_name}' does not exist. Removing from cooldown DB.")
         remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
+
+    # FAILED TOO MANY RECENTLY
+    if "as you have failed too many" in result_text.lower():
+        now = datetime.datetime.now()
+        print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
+        _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
+        global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
+        return 'aggs_blocked', None, None
 
     # FALLBACK if unexpected result
     short_cd = now + datetime.timedelta(seconds=random.uniform(30, 60))
