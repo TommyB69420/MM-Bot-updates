@@ -110,6 +110,9 @@ MIN_POLLING_INTERVAL_LOWER = 40
 MIN_POLLING_INTERVAL_UPPER = 80
 startup_login_ping_sent = False # One time Discord ping on startup (guard)
 
+# --- Script Version ---
+SCRIPT_VERSION = "11-09-2025"
+
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'
 COOLDOWN_FILE = os.path.join(COOLDOWN_DATA_DIR, 'aggravated_crime_cooldowns.json')

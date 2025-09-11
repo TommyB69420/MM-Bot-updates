@@ -86,7 +86,7 @@ def message_discord_on_startup():
         initial_player_data = fetch_initial_player_data()
         character_name = initial_player_data.get("Character Name", "UNKNOWN")
         if character_name and character_name != "UNKNOWN":
-            send_discord_notification(f"Script started for character: {character_name}. Version: 11/9/2025")
+            send_discord_notification(f"Script started for character: {character_name}. Version: {global_vars.SCRIPT_VERSION}")
             setattr(global_vars, "startup_login_ping_sent", True)
     except Exception as e:
         # Not in-game yet (or DOM not ready) — totally fine; we'll try again later.
