@@ -801,7 +801,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
 
     now = datetime.datetime.now()
 
-    if "recently survived an aggravated crime" in result_text:
+    if "players account has increased security" in result_text:
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
         return 'cooldown_target', target_player_name, None
 
@@ -810,7 +810,6 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
         remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
 
-    # Failed too many recently
     if "as you have failed too many" in (result_text or "").lower():
         print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
         _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
