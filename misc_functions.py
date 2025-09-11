@@ -563,7 +563,7 @@ def auto_buy_drug_store_item(item_name: str):
     print(f"[AutoBuy] Attempting to buy: {item_name}")
     item_radio_xpath = f"//input[@id='{item_name}']"
     purchase_button_xpath = "//input[@name='B1']"
-    success_message_xpath = "//div[@id='success' and (contains(text(), 'You keep') or contains(text(), 'something special'))]"
+    success_message_xpath = "//div[@id='success']"
 
     # Try to select the radio button
     selected = _find_and_click(By.XPATH, item_radio_xpath)
