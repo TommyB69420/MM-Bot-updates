@@ -21,6 +21,31 @@ def community_services(player_data):
     current_location = player_data.get("Location")
     home_city = player_data.get("Home City")
 
+    # Only do CS if Jail Break is visible in Aggravated Crimes, and CSNotToRemoveBnE is enabled in settings.ini
+    try:
+        cs_guard = global_vars.config.getboolean('BnE', 'CSNotToRemoveBnE', fallback=False)
+    except Exception:
+        cs_guard = False
+
+    if cs_guard:
+        # Open Aggravated Crimes to inspect radios
+        if not _navigate_to_page_via_menu(
+                "//span[@class='income']",
+                "//a[@href='/income/agcrime.asp'][normalize-space()='Aggravated Crimes']",
+                "Aggravated Crimes Page"):
+            print("FAILED: Could not open Aggravated Crimes to check Jail Break. Short cooldown.")
+            global_vars._script_action_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            return False
+
+        # Look for Jail Break radio
+        jail_break_radio = _find_element(By.XPATH, "//input[@id='jailbreak']", timeout=1.5)
+        if not jail_break_radio:
+            print("Jail Break not present. Skipping Community Service to preserve BnE/JB mix.")
+            global_vars._script_action_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(10, 16))
+            return False
+        else:
+            print("Jail Break present; proceeding with Community Service.")
+
     if not _navigate_to_page_via_menu(
             "//span[@class='income']",
             "//a[normalize-space()='Community Service']",

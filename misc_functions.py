@@ -1529,6 +1529,16 @@ def casino_slots():
         global_vars._script_casino_slots_cooldown_end_time = now + datetime.timedelta(seconds=random.uniform(30, 90))
         return False
 
+    # After entering Slots, immediately check if the page already shows the addiction fail box.
+    early_fail_msg = _get_element_text_quiet(By.XPATH, "//div[@id='fail']", timeout=0.5)
+    if early_fail_msg and 'get an addiction' in early_fail_msg.lower():
+        print("Addiction warning detected immediately after entering Slots — setting 25h cooldown.")
+        next_time = datetime.datetime.now() + datetime.timedelta(hours=25)
+        _set_last_timestamp(global_vars.CASINO_NEXT_CHECK_FILE, next_time)
+        global_vars._script_casino_slots_cooldown_end_time = next_time
+        print(f"Casino Slots cooldown set until {next_time.strftime('%Y-%m-%d %H:%M:%S')}.")
+        return True
+
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
     # On the Slots page: enter $100, then submit repeatedly until 'get an addiction' shows in //div[@id='fail']

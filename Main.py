@@ -100,7 +100,6 @@ def check_for_logout_and_login():
     - Once logged in, click Play Now.
     Returns True if a login attempt was made, False otherwise.
     """
-    import time
 
     if "default.asp" not in (global_vars.driver.current_url or "").lower():
         return False  # Not on login screen
@@ -113,10 +112,8 @@ def check_for_logout_and_login():
         return False
 
     send_discord_notification("Logged out — attempting to log in.")
-    login_attempted = False
 
     while True:
-        login_attempted = True
         print("Attempting login…")
 
         if not _find_and_send_keys(By.XPATH, "//form[@id='loginForm']//input[@id='email']", username):
@@ -168,7 +165,7 @@ def check_for_gbh(character_name: str):
 
     return False
 
-def get_enabled_configs(location):
+def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     """
     Reads the settings from settings.ini to determine what functions to turn on
     """
@@ -184,36 +181,40 @@ def get_enabled_configs(location):
     "do_bne_enabled": config.getboolean('BnE', 'DoBnE', fallback=False),
     "do_armed_robbery_enabled": config.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False),
     "do_torch_enabled": config.getboolean('Torch', 'DoTorch', fallback=False),
-    "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ["Judge", "Supreme Court Judge"] and location == home_city,
-    "do_launders_enabled": config.getboolean('Launder', 'DoLaunders', fallback=False),
-    "do_manufacture_drugs_enabled": config.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False),
-    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location ==home_city,
+    "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ("Judge", "Supreme Court Judge") and location == home_city,
+    "do_launders_enabled": config.getboolean('Launder', 'DoLaunders', fallback=False) and location != home_city,
+    "do_manufacture_drugs_enabled": config.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False) and occupation == "Gangster",
+    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location == home_city,
     "do_event_enabled": config.getboolean('Misc', 'DoEvent', fallback=False),
     "do_weapon_shop_check_enabled": config.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False) and location == home_city and occupation in ["Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"],
+    "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False) and location == home_city and occupation in ("Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"),
     "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any ("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower(),
-    "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False),
-    "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False),
-    "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients', fallback=False) and location == home_city and occupation in ["Bank Teller", "Loan Officer", "Bank Manager"],
-    "do_auto_promo_enabled": config.getboolean('Misc', 'TakePromo', fallback=True) and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown")),
+    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower() and location == home_city,
+    "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False) and occupation == "Police Officer" and location == home_city,
+    "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False) and occupation == "Police Officer" and location == home_city,
+    "do_forensics_enabled": config.getboolean('Police', 'DoForensics', fallback=False) and occupation == "Police Officer" and location == home_city,
     "do_consume_drugs_enabled": config.getboolean('Drugs', 'ConsumeCocaine', fallback=False) and location == home_city,
     "do_slots_enabled": config.getboolean('Misc', 'DoSlots', fallback=False) and any("Casino" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+    "do_lawyer_cases_enabled": occupation == "Lawyer",
+    "do_autopsy_work_enabled": occupation in ("Mortician", "Undertaker", "Funeral Director") and location == home_city,
+    "do_engineering_work_enabled": occupation in ("Mechanic", "Technician", "Engineer", "Chief Engineer"),
+    "do_fire_cases_enabled": occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief"),
+    "do_medical_cases_enabled": occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director"),
+    "do_bank_cases_enabled": occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city,
+    "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients',fallback=False) and location == home_city and occupation in ("Bank Teller", "Loan Officer", "Bank Manager"),
+    "do_blind_eye_enabled": ('customs' in (occupation or '').lower()) and location == home_city and blind_eye_queue_count() > 0,
+    "do_funeral_smuggle_enabled": getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set() and funeral_smuggle_queue_count() > 0,
+    "do_auto_promo_enabled": (config.getboolean('Misc', 'TakePromo', fallback=True) and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor", "Commissioner"}
+    and rank not in {"Commissioner-General"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
     }
 
-def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs, next_rank_pc):
+def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs):
     """
     Determines the optimal sleep duration based on enabled activities and cooldown timers.
     """
     print("\n--- Calculating Sleep Duration ---")
-
-    # Extract static context
-    occupation = timers_data.get('occupation')
-    location = timers_data.get('location')
-    home_city = timers_data.get('home_city')
-    queue_count = blind_eye_queue_count()
 
     # Extract timers
     get_timer = lambda key: timers_data.get(key, float('inf'))
@@ -239,94 +240,95 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
     consume_drugs = get_timer('consume_drugs_time_remaining')
     casino = get_timer('casino_slots_time_remaining')
 
-    cfg = global_vars.config
-    businesses = global_vars.private_businesses
-
     active = []
 
     # Add timers if enabled
-    if cfg.getboolean('Earns Settings', 'DoEarns', fallback=False):
+    if enabled_configs.get('do_earns_enabled'):
         active.append(('Earn', earn))
-    if cfg.getboolean('Earns Settings', 'UseDilly', fallback=False):
+    if enabled_configs.get('do_diligent_worker_enabled'):
         active.append(('Diligent Worker', skill))
-    if cfg.getboolean('Actions Settings', 'CommunityService', fallback=False):
+    if enabled_configs.get('do_community_services_enabled'):
         active.append(('Community Service', action))
     if enabled_configs.get('do_university_degrees_enabled'):
         active.append(('Study Degree', action))
-    if cfg.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False):
+    if enabled_configs.get('do_manufacture_drugs_enabled'):
         active.append(('Manufacture Drugs', action))
-    if cfg.getboolean('Misc', 'DoEvent', fallback=False):
+    if enabled_configs.get('do_event_enabled'):
         active.append(('Event', event))
-    if cfg.getboolean('Launder', 'DoLaunders', fallback=False) and location != home_city:
+    if enabled_configs.get('do_launders_enabled'):
         active.append(('Launder', launder))
-    if cfg.get('Actions Settings', 'Training', fallback='').strip() and location == home_city:
+    if enabled_configs.get('do_training_enabled'):
         active.append(('Training', action))
     if enabled_configs.get('do_auto_promo_enabled'):
         active.append(('Auto Promo', auto_promo))
+    if enabled_configs.get ('do_judge_cases_enabled'):
+        active.append(('Judge Casework', case))
+    if enabled_configs.get ('do_lawyer_cases_enabled'):
+        active.append(('Lawyer Casework', case))
+    if enabled_configs.get ('do_autopsy_work_enabled'):
+        active.append(('Autopsy Work', case))
+    if enabled_configs.get ('do_engineering_work_enabled'):
+        active.append(('Engineering Casework', case))
+    if enabled_configs.get ('do_fire_cases_enabled'):
+        active.append(('FireFighter Casework', case))
+    if enabled_configs.get ('do_medical_cases_enabled'):
+        active.append(('Medical Casework', case))
+    if enabled_configs.get ('do_bank_cases_enabled'):
+        active.append(('Bank Casework', case))
+    if enabled_configs.get ('do_bank_add_clients_enabled'):
+        active.append(('Bank add clients', bank_add))
+    if enabled_configs.get ('do_firefighter_duties_enabled'):
+        active.append(('Firefighter Duties', action))
+    if enabled_configs.get ('do_post_911_enabled'):
+        active.append(('Post 911', post_911))
+    if enabled_configs.get ('do_police_cases_enabled'):
+        active.append(('Do Cases', case))
+    if enabled_configs.get ('do_forensics_enabled'):
+        effective_forensics = max(action, case)
+        active.append(('Forensics', effective_forensics))
+    if enabled_configs.get ('do_weapon_shop_check_enabled'):
+        active.append(('Check Weapon Shop', weapon))
+    if enabled_configs.get ('do_drug_store_enabled'):
+        active.append(('Check Drug Store', drug))
+    if enabled_configs.get ('do_gym_trains_enabled'):
+        active.append(('Gym Trains', gym))
+    if enabled_configs.get ('do_slots_enabled'):
+        active.append(('Casino Slots', casino))
+    if enabled_configs.get ('do_bionics_shop_check_enabled'):
+        active.append(('Check Bionics Shop', bionics))
     if enabled_configs.get('do_consume_drugs_enabled'):
         active.append(('Consume Drugs', consume_drugs))
+    if enabled_configs.get ('do_blind_eye_enabled'):
+        active.append(('Blind Eye', trafficking))
+    if enabled_configs.get ('do_funeral_smuggle_enabled'):
+        smuggle_tokens = funeral_smuggle_queue_count()
+        active.append((f"Smuggle (queued {smuggle_tokens})", trafficking))
+
     active.append(('Yellow Pages Scan', yps))
     active.append(('Funeral Parlour Scan', fps))
 
-    # Aggravated Crime timers
-    if any(cfg.getboolean(section, f'Do{key}', fallback=False)
-           for section, key in [('Hack', 'Hack'), ('PickPocket', 'PickPocket'), ('Mugging', 'Mugging'), ('BnE', 'BnE')]):
+    # Aggravated Crime timers (use enabled_configs flags)
+    if any([
+        enabled_configs.get('do_hack_enabled'),
+        enabled_configs.get('do_pickpocket_enabled'),
+        enabled_configs.get('do_mugging_enabled'),
+        enabled_configs.get('do_bne_enabled'),
+    ]):
         active.append(('Aggravated Crime (General)', aggro))
-    elif cfg.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False):
+
+    elif enabled_configs.get('do_armed_robbery_enabled'):
         if aggro > global_vars.ACTION_PAUSE_SECONDS:
             active.append(('Armed Robbery (General)', aggro))
         else:
-            active += [('Armed Robbery (Re-check)', rob_recheck), ('Armed Robbery (General)', aggro)]
-    elif cfg.getboolean('Torch', 'DoTorch', fallback=False):
+            active += [('Armed Robbery (Re-check)', rob_recheck),
+                       ('Armed Robbery (General)', aggro)]
+
+    elif enabled_configs.get('do_torch_enabled'):
         if aggro > global_vars.ACTION_PAUSE_SECONDS:
             active.append(('Torch (General)', aggro))
         else:
-            active += [('Torch (Re-check)', torch_recheck), ('Torch (General)', aggro)]
-
-    # Career specific based on occupation
-    if occupation in ("Mortician", "Undertaker", "Funeral Director"):
-        active.append(('Autopsy Work', case))
-    if enabled_configs['do_judge_cases_enabled']:
-        active.append(('Judge Casework', case))
-    if occupation == "Lawyer":
-        active.append(('Lawyer Casework', case))
-    if occupation in ("Mechanic", "Technician", "Engineer", "Chief Engineer"):
-        active.append(('Engineering Casework', case))
-    if occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief"):
-        active.append(('FireFighter Casework', case))
-    if occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director"):
-        active.append(('Medical Casework', case))
-    if occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city:
-        active.append(('Bank Casework', case))
-    if ('customs' in (occupation or '').lower()) and location == home_city and queue_count > 0:
-        active.append(('Blind Eye', trafficking))
-    if getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set():
-        smuggle_tokens = funeral_smuggle_queue_count()
-        if smuggle_tokens > 0:
-            active.append((f"Smuggle (queued {smuggle_tokens})", trafficking))
-    if enabled_configs['do_bank_add_clients_enabled']:
-        active.append(('Bank add clients', bank_add))
-    if enabled_configs['do_firefighter_duties_enabled']:
-        active.append(('Firefighter Duties', action))
-    if cfg.getboolean('Police', 'Post911', fallback=False) and occupation in ["Police Officer"] and location == home_city:
-        active.append(('Post 911', post_911))
-    if cfg.getboolean('Police', 'DoCases', fallback=False) and occupation in ["Police Officer"] and location == home_city:
-        active.append(('Do Cases', case))
-    if cfg.getboolean('Police', 'DoForensics', fallback=False) and occupation in ["Police Officer"] and location == home_city:
-        effective_forensics = max(action, case)
-        active.append(('Forensics', effective_forensics))
-
-    # City actions
-    if cfg.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in b for c, b in businesses.items() if c == location):
-        active.append(('Check Weapon Shop', weapon))
-    if cfg.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in b for c, b in businesses.items() if c == location):
-        active.append(('Check Drug Store', drug))
-    if cfg.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in b for c, b in businesses.items() if c == location):
-        active.append(('Gym Trains', gym))
-    if cfg.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in b for c, b in businesses.items() if c == location):
-        active.append(('Check Bionics Shop', bionics))
-    if enabled_configs.get('do_slots_enabled'):
-        active.append(('Casino Slots', casino))
+            active += [('Torch (Re-check)', torch_recheck),
+                       ('Torch (General)', aggro)]
 
     print("--- Timers Under Consideration for Sleep Duration ---")
     for name, timer_val in active:
@@ -366,7 +368,7 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
 start_discord_bridge()
 print("[Main] Discord bridge started.")
 
-    # --- SCRIPT CHECK DETECTION & LOGOUT/LOGIN ---
+# --- SCRIPT CHECK DETECTION & LOGOUT/LOGIN ---
 def perform_critical_checks(character_name):
     """
     Fast, non-blocking check for logout and script check pages.
@@ -434,7 +436,6 @@ while True:
 
     # Re-read settings.ini in case they've changed
     global_vars.config.read('settings.ini') # Re-read config in case it's changed
-    current_time = datetime.datetime.now()
     action_performed_in_cycle = False
 
     # --- Fetch all timers first ---
@@ -481,7 +482,8 @@ while True:
     print(f"\nCurrent Character: {character_name}, Rank: {rank}, Occupation: {occupation}\nClean Money: {clean_money}, Dirty Money: {dirty_money}\nLocation: {location}. Home City: {home_city}. Next Rank: {next_rank_pct}. Consumables 24h: {Consumables}\n")
 
     # Read enabled configs.
-    enabled_configs = get_enabled_configs(location)
+    enabled_configs = get_enabled_configs(location, occupation, home_city, rank, next_rank_pct)
+
 
     if perform_critical_checks(character_name):
         continue
@@ -527,7 +529,7 @@ while True:
     with global_vars.DRIVER_LOCK:
 
         # Auto Promo logic
-        if enabled_configs['do_auto_promo_enabled'] and promo_check_time_remaining <= 0:
+        if enabled_configs.get ('do_auto_promo_enabled') and promo_check_time_remaining <= 0:
             print(f"Auto Promo timer ({promo_check_time_remaining:.2f}s) is ready. Attempting auto-promotion...")
             if take_promotion():
                 action_performed_in_cycle = True
@@ -536,15 +538,16 @@ while True:
             continue
 
         # Diligent Worker Logic
-        if enabled_configs['do_diligent_worker_enabled'] and skill_time_remaining <= 0:
+        if enabled_configs.get ('do_diligent_worker_enabled') and skill_time_remaining <= 0:
             print(f"Skill timer ({skill_time_remaining:.2f}s) is ready. Attempting Diligent Worker.")
             if diligent_worker(character_name, which_player=None):
                 action_performed_in_cycle = True
-            else:
-                print("Dilligent Worker logic did not perform an action or failed. Setting fallback cooldown.")
+
+        if perform_critical_checks(character_name):
+            continue
 
         # Earn logic
-        if enabled_configs['do_earns_enabled'] and earn_time_remaining <= 0:
+        if enabled_configs.get ('do_earns_enabled') and earn_time_remaining <= 0:
             print(f"Earn timer ({earn_time_remaining:.2f}s) is ready. Attempting earn.")
             if execute_earns_logic():
                 action_performed_in_cycle = True
@@ -588,7 +591,7 @@ while True:
                 print("Queued Community Service attempt failed or could not start. Will retry next cycle.")
 
         # Community Service Logic
-        if enabled_configs['do_community_services_enabled'] and action_time_remaining <= 0:
+        if enabled_configs.get ('do_community_services_enabled') and action_time_remaining <= 0:
             print(f"Community Service timer ({action_time_remaining:.2f}s) is ready. Attempting CS.")
             if community_services(initial_player_data):
                 action_performed_in_cycle = True
@@ -599,8 +602,8 @@ while True:
             continue
 
         # Firefighter duties Logic
-        if enabled_configs['do_firefighter_duties_enabled'] and action_time_remaining <= 0:
-            print(f"Firefighter duties timer ({action_time_remaining:.2f}s) is ready. Attempting to do duties   .")
+        if enabled_configs.get ('do_firefighter_duties_enabled') and action_time_remaining <= 0:
+            print(f"Firefighter duties timer ({action_time_remaining:.2f}s) is ready. Attempting to do duties.")
             if fire_duties():
                 action_performed_in_cycle = True
             else:
@@ -610,7 +613,7 @@ while True:
             continue
 
         # Study Degrees Logic
-        if enabled_configs['do_university_degrees_enabled'] and action_time_remaining <= 0:
+        if enabled_configs.get ('do_university_degrees_enabled') and action_time_remaining <= 0:
             print(f"Study Degree timer ({action_time_remaining:.2f}s) is ready. Attempting Study Degree.")
             if study_degrees():
                 action_performed_in_cycle = True
@@ -621,7 +624,7 @@ while True:
             continue
 
         # Training logic
-        if enabled_configs.get('do_training_enabled') and action_time_remaining <= 0:
+        if enabled_configs.get ('do_training_enabled') and action_time_remaining <= 0:
             training_type = enabled_configs['do_training_enabled'].lower()
 
             training_map = {
@@ -646,13 +649,12 @@ while True:
             continue
 
         # Drug manufacturing logic
-        if enabled_configs['do_manufacture_drugs_enabled'] and occupation == "Gangster":
-            if action_time_remaining <= 0:
-                print(f"Manufacture Drugs timer ({action_time_remaining:.2f}s) is ready. Attempting manufacture.")
-                if manufacture_drugs(initial_player_data):
-                    action_performed_in_cycle = True
-                else:
-                    print("Manufacture Drugs logic did not perform an action or failed. Setting fallback cooldown.")
+        if enabled_configs.get ('do_manufacture_drugs_enabled') and action_time_remaining <= 0:
+            print(f"Manufacture Drugs timer ({action_time_remaining:.2f}s) is ready. Attempting manufacture.")
+            if manufacture_drugs(initial_player_data):
+                action_performed_in_cycle = True
+            else:
+                print("Manufacture Drugs logic did not perform an action or failed. Setting fallback cooldown.")
 
         if perform_critical_checks(character_name):
             continue
@@ -662,25 +664,25 @@ while True:
 
         # Check if any aggravated crime setting is enabled
         if any([
-            enabled_configs['do_hack_enabled'],
-            enabled_configs['do_pickpocket_enabled'],
-            enabled_configs['do_mugging_enabled'],
-            enabled_configs['do_bne_enabled'],
-            enabled_configs['do_armed_robbery_enabled'],
-            enabled_configs['do_torch_enabled'],
+            enabled_configs.get ('do_hack_enabled'),
+            enabled_configs.get ('do_pickpocket_enabled'),
+            enabled_configs.get ('do_mugging_enabled'),
+            enabled_configs.get ('do_bne_enabled'),
+            enabled_configs.get ('do_armed_robbery_enabled'),
+            enabled_configs.get ('do_torch_enabled'),
         ]):
             # Hack / Pickpocket / Mugging / BnE — only if no mandatory CS queued
             if any([
-                enabled_configs['do_hack_enabled'],
-                enabled_configs['do_pickpocket_enabled'],
-                enabled_configs['do_mugging_enabled'],
-                enabled_configs['do_bne_enabled'],
+                enabled_configs.get ('do_hack_enabled'),
+                enabled_configs.get ('do_pickpocket_enabled'),
+                enabled_configs.get ('do_mugging_enabled'),
+                enabled_configs.get ('do_bne_enabled'),
             ]) and aggravated_crime_time_remaining <= 0 and community_service_queue_count() == 0:
                 should_attempt_aggravated_crime = True
                 print(f"Aggravated Crime timer ({aggravated_crime_time_remaining:.2f}s) is ready. Attempting crime.")
 
             # Armed Robbery — only if no mandatory CS queued
-            if enabled_configs['do_armed_robbery_enabled']:
+            if enabled_configs.get ('do_armed_robbery_enabled'):
                 if (aggravated_crime_time_remaining <= 0
                         and armed_robbery_recheck_time_remaining <= 0
                         and community_service_queue_count() == 0):
@@ -688,7 +690,7 @@ while True:
                     print("Armed Robbery timers are ready. Attempting crime.")
 
             # Torch — only if no mandatory CS queued
-            if enabled_configs['do_torch_enabled']:
+            if enabled_configs.get ('do_torch_enabled'):
                 if (aggravated_crime_time_remaining <= 0
                         and torch_recheck_time_remaining <= 0
                         and community_service_queue_count() == 0):
@@ -715,7 +717,7 @@ while True:
             continue
 
         # Do event logic
-        if enabled_configs['do_event_enabled'] and event_time_remaining <= 0:
+        if enabled_configs.get ('do_event_enabled') and event_time_remaining <= 0:
             print(f"Event timer ({event_time_remaining:.2f}s) is ready. Attempting the event.")
             if do_events():
                 action_performed_in_cycle = True
@@ -726,13 +728,13 @@ while True:
             continue
 
         # Do Weapon Shop Logic
-        if enabled_configs['do_weapon_shop_check_enabled'] and check_weapon_shop_time_remaining <= 0:
+        if enabled_configs.get ('do_weapon_shop_check_enabled') and check_weapon_shop_time_remaining <= 0:
             print(f"Weapon Shop timer ({check_weapon_shop_time_remaining:.2f}s) is ready. Attempting check now.")
             if check_weapon_shop(initial_player_data):
                 action_performed_in_cycle = True
 
-        # Do Consume Drugs Logic
-        if enabled_configs.get('do_consume_drugs_enabled') and consume_drugs_time_remaining <= 0:
+        # Consume Drugs Logic
+        if enabled_configs.get ('do_consume_drugs_enabled') and consume_drugs_time_remaining <= 0:
             print(f"Consume Drugs timer ({consume_drugs_time_remaining:.2f}s) is ready. Attempting consume/earn loop now.")
             if consume_drugs():
                 action_performed_in_cycle = True
@@ -740,8 +742,8 @@ while True:
         if perform_critical_checks(character_name):
             continue
 
-        # Do Bionics Shop Logic
-        if enabled_configs['do_bionics_shop_check_enabled'] and check_bionics_store_time_remaining <= 0:
+        # Bionics Shop Logic
+        if enabled_configs.get ('do_bionics_shop_check_enabled') and check_bionics_store_time_remaining <= 0:
             print(f"Bionics Shop timer ({check_bionics_store_time_remaining:.2f}s) is ready. Attempting check now.")
             if check_bionics_shop(initial_player_data):
                 action_performed_in_cycle = True
@@ -750,13 +752,13 @@ while True:
             continue
 
         # Casino Slots logic
-        if enabled_configs.get('do_slots_enabled') and casino_slots_time_remaining <= 0:
+        if enabled_configs.get ('do_slots_enabled') and casino_slots_time_remaining <= 0:
             print("Casino Slots timer ready. Attempting to play until addiction warning.")
             if casino_slots():
                 action_performed_in_cycle = True
 
-        # Do Drug Store Check Logic
-        if enabled_configs['do_drug_store_enabled'] and check_drug_store_time_remaining <= 0:
+        # Drug Store Check Logic
+        if enabled_configs.get ('do_drug_store_enabled') and check_drug_store_time_remaining <= 0:
             print(f"Drug Store timer ({check_drug_store_time_remaining:.2f}s) is ready. Attempting to check Drug Store.")
             if check_drug_store(initial_player_data):
                 action_performed_in_cycle = True
@@ -764,8 +766,8 @@ while True:
         if perform_critical_checks(character_name):
             continue
 
-        # Do Gym Train Logic
-        if enabled_configs['do_gym_trains_enabled'] and gym_trains_time_remaining <= 0:
+        # Gym Train Logic
+        if enabled_configs.get ('do_gym_trains_enabled') and gym_trains_time_remaining <= 0:
             print(f"Gym trains timer ({gym_trains_time_remaining:.2f}s) is ready. Attempting Gym trains.")
             if gym_training():
                 action_performed_in_cycle = True
@@ -774,7 +776,7 @@ while True:
             continue
 
         # Judge Casework Logic
-        if enabled_configs['do_judge_cases_enabled'] and case_time_remaining <= 0:
+        if enabled_configs.get ('do_judge_cases_enabled') and case_time_remaining <= 0:
             print(f"Judge Casework timer ({case_time_remaining:.2f}s) is ready. Attempting judge cases.")
             if judge_casework(initial_player_data):
                 action_performed_in_cycle = True
@@ -782,8 +784,8 @@ while True:
         if perform_critical_checks(character_name):
             continue
 
-        # Do Lawyer case work logic
-        if occupation == "Lawyer" and case_time_remaining <= 0:
+        # Lawyer case work logic
+        if enabled_configs.get ('do_lawyer_cases_enabled') and case_time_remaining <= 0:
             print(f"Lawyer Casework timer ({case_time_remaining:.2f}s) is ready. Attempting lawyer cases.")
             if lawyer_casework():
                 action_performed_in_cycle = True
@@ -792,13 +794,16 @@ while True:
             continue
 
         # Medical Casework Logic
-        if occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director") and case_time_remaining <= 0:
+        if enabled_configs.get ('do_medical_cases_enabled') and case_time_remaining <= 0:
             print(f"Medical Casework timer ({case_time_remaining:.2f}s) is ready. Attempting medical cases.")
             if medical_casework(initial_player_data):
                 action_performed_in_cycle = True
 
+        if perform_critical_checks(character_name):
+            continue
+
         # Mortician Autopsy Logic
-        if occupation in ("Mortician", "Undertaker", "Funeral Director") and case_time_remaining <= 0:
+        if enabled_configs.get ('do_autopsy_work_enabled') and case_time_remaining <= 0:
             print(f"Autopsy timer is ready ({case_time_remaining:.2f}s) is ready. Attempting autopsy cases.")
             if mortician_autopsy():
                 action_performed_in_cycle = True
@@ -807,7 +812,7 @@ while True:
             continue
 
         # Police Casework Logic
-        if enabled_configs['do_police_cases_enabled'] and occupation in ["Police Officer"] and location == home_city and case_time_remaining <= 0:
+        if enabled_configs.get ('do_police_cases_enabled') and case_time_remaining <= 0:
             print(f"Police case timer ({case_time_remaining:.2f}s) is ready. Attempting to do Police Cases")
             if prepare_police_cases(character_name):
                 action_performed_in_cycle = True
@@ -816,7 +821,7 @@ while True:
             continue
 
         # Post 911 Logic
-        if enabled_configs['do_post_911_enabled'] and occupation in ["Police Officer"] and location == home_city and post_911_time_remaining <= 0:
+        if enabled_configs.get ('do_post_911_enabled') and post_911_time_remaining <= 0:
             print(f"Post 911 timer ({post_911_time_remaining:.2f}s) is ready. Attempting to post 911")
             if police_911():
                 action_performed_in_cycle = True
@@ -825,7 +830,7 @@ while True:
             continue
 
         # Firefighter Casework Logic
-        if occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief") and case_time_remaining <= 0:
+        if enabled_configs.get ('do_fire_cases_enabled') and case_time_remaining <= 0:
             print(f"Fire Fighter Casework timer ({case_time_remaining:.2f}s) is ready. Attempting Fire Fighter cases.")
             if fire_casework(initial_player_data):
                 action_performed_in_cycle = True
@@ -834,61 +839,42 @@ while True:
             continue
 
         # Bank Laundering Casework Logic
-        if occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and case_time_remaining <= 0:
+        if enabled_configs.get ('do_bank_cases_enabled') and case_time_remaining <= 0:
             if location == home_city:
                 print(f"Bank Casework timer ({case_time_remaining:.2f}s) is ready. Attempting bank cases.")
                 if banker_laundering():
                     action_performed_in_cycle = True
-            else:
-                print(f"Skipping Bank Casework: Not in home city. Location: {location}, Home City: {home_city}.")
 
         if perform_critical_checks(character_name):
             continue
 
         # Customs Blind Eye Logic
-        queue_count = blind_eye_queue_count()
-        if ('customs' in (occupation or '').lower()) and location == home_city and queue_count > 0:
-            if trafficking_time_remaining <= 0:
-                print(f"Blind Eye queued ({queue_count}) and Trafficking timer ({trafficking_time_remaining:.2f}s) is ready. Attempting Blind Eye.")
-                if customs_blind_eyes():
-                    action_performed_in_cycle = True
-            else:
-                print(f"Blind Eye queued ({queue_count}), but Trafficking timer not ready ({trafficking_time_remaining:.2f}s).")
+        if enabled_configs.get ('do_blind_eye_enabled') and trafficking_time_remaining <= 0:
+            print(f"Blind Eye queued ({blind_eye_queue_count()}) and Trafficking timer ({trafficking_time_remaining:.2f}s) is ready. Attempting Blind Eye.")
+            if customs_blind_eyes():
+                action_performed_in_cycle = True
 
-        # Funeral Smuggle (Discord-triggered) Logic
-        if global_vars._smuggle_request_active.is_set():
+        # Funeral Smuggle Logic
+        if enabled_configs.get ('do_funeral_smuggle_enabled') and trafficking_time_remaining <= 0:
             req_target = (global_vars._smuggle_request_target or "").strip()
-            token_count = funeral_smuggle_queue_count()
-            if not req_target:
-                print("[Smuggle] Request is armed but no target name set. Clearing flag for safety.")
-                global_vars._smuggle_request_active.clear()
-            else:
-                if token_count <= 0:
-                    print(f"[Smuggle] Request armed for '{req_target}', but no smuggle tokens available. Waiting for a token.")
-                elif trafficking_time_remaining <= 0:
-                    print(f"[Smuggle] Timer ready and {token_count} token(s) available. Attempting smuggle for '{req_target}'.")
-                    if execute_smuggle_for_player(req_target):
-                        # Clear the request flag on success (one request -> one smuggle)
-                        global_vars._smuggle_request_active.clear()
-                        action_performed_in_cycle = True
-                    else:
-                        print(f"[Smuggle] Smuggle attempt for '{req_target}' failed. Will retry when conditions allow.")
-                else:
-                    print(f"[Smuggle] Request armed for '{req_target}', but trafficking timer not ready "
-                          f"({trafficking_time_remaining:.2f}s).")
+            smuggle_tokens = funeral_smuggle_queue_count()
+            if req_target:
+                print(f"[Smuggle] Timer ready and {smuggle_tokens} token(s) available. Attempting smuggle for '{req_target}'.")
+                if execute_smuggle_for_player(req_target):
+                    global_vars._smuggle_request_active.clear()
+                    action_performed_in_cycle = True
 
         # Bank Add Clients Logic
-        if enabled_configs['do_bank_add_clients_enabled']:
-            if bank_add_clients_time_remaining <= 0:
-                print(f"Add Clients timer ({bank_add_clients_time_remaining:.2f}s) is ready. Attempting to add new clients.")
-                if banker_add_clients(initial_player_data):
-                    action_performed_in_cycle = True
+        if enabled_configs.get ('do_bank_add_clients_enabled') and bank_add_clients_time_remaining <= 0:
+            print(f"Add Clients timer ({bank_add_clients_time_remaining:.2f}s) is ready. Attempting to add new clients.")
+            if banker_add_clients(initial_player_data):
+                action_performed_in_cycle = True
 
         if perform_critical_checks(character_name):
             continue
 
         # Engineering Casework Logic
-        if occupation in ("Mechanic", "Technician", "Engineer", "Chief Engineer") and case_time_remaining <= 0:
+        if enabled_configs.get ('do_engineering_work_enabled') and case_time_remaining <= 0:
             print(f"Engineering Casework timer ({case_time_remaining:.2f}s) is ready. Attempting engineering cases.")
             if engineering_casework(initial_player_data):
                 action_performed_in_cycle = True
@@ -922,16 +908,10 @@ while True:
             continue
 
         # Do Laundering logic (as a gangster, not a banker)
-        if enabled_configs['do_launders_enabled']:
-            if location == home_city:
-                print(f"Skipping Launder: In home city ({location}).")
-                global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(100, 200))
-            elif launder_time_remaining <= 0:
-                print(f"Launder timer ({launder_time_remaining:.2f}s) is ready. Attempting launder.")
-                if laundering(initial_player_data):
-                    action_performed_in_cycle = True
-                else:
-                    print("Launder logic did not perform an action or failed. Setting fallback cooldown.")
+        if enabled_configs.get ('do_launders_enabled') and launder_time_remaining <= 0:
+            print(f"Launder timer ({launder_time_remaining:.2f}s) is ready. Attempting launder.")
+            if laundering(initial_player_data):
+                action_performed_in_cycle = True
 
         if perform_critical_checks(character_name):
             continue
@@ -961,7 +941,7 @@ while True:
         print("WARNING: No 'RestingPage' URL set in settings.ini under [Auth].")
 
     # --- Determine the total sleep duration ---
-    total_sleep_duration = _determine_sleep_duration(action_performed_in_cycle, {**all_timers, 'occupation': occupation, 'location': location, 'home_city': home_city}, enabled_configs, next_rank_pct)
+    total_sleep_duration = _determine_sleep_duration(action_performed_in_cycle, {**all_timers, 'occupation': occupation, 'location': location, 'home_city': home_city}, enabled_configs)
 
     print(f"Sleeping for {total_sleep_duration:.2f} seconds...")
     time.sleep(total_sleep_duration)

@@ -845,7 +845,7 @@ def _thread_any_clickable_in_td3_xpath(i: int) -> str:
 
 def find_and_open_thread_on_list(target_name: str, max_threads: int = 50) -> bool:
     """
-    On the list page, loop visible thread blocks, read each block's text,
+    On the message page, loop visible thread blocks, read each block's text,
     and open the one containing `target_name` (case-insensitive). Then return True.
     """
     if not open_comms():
@@ -920,7 +920,8 @@ def send_in_game_reply(body: str) -> bool:
 
 def _legacy_open_by_header(target_name: str, max_threads: int = 30) -> bool:
     """
-    Legacy fallback: click each thread link (td[3]) and compare the header sender inside the open conversation.
+    Opens a message and replies to a person when the !tell discord command is sent
+    Click each thread link (td[3]) and compare the header sender inside the open conversation.
     """
     if not open_comms():
         return False
