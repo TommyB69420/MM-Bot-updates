@@ -44,8 +44,10 @@ def get_game_timer_remaining(timer_xpath):
             print(f"Warning: Could not parse game time or timer from XPath: {timer_xpath}. Retrying...")
             time.sleep(random.uniform(2, 5))
 
-    print(f"Failed to get game timer from {timer_xpath} after {max_time_retries} retries. Returning infinity.")
-    return float('inf')
+    print(f"Failed to get game timer from {timer_xpath} after {max_time_retries} retries. Setting short cooldown and continuing.")
+    # Instead of blocking forever, small wait before trying to check for timers again.
+    return random.uniform(15, 45)
+
 
 def get_all_active_game_timers():
     """
