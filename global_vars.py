@@ -111,7 +111,7 @@ MIN_POLLING_INTERVAL_UPPER = 80
 startup_login_ping_sent = False # One time Discord ping on startup (guard)
 
 # --- Script Version ---
-SCRIPT_VERSION = "11-09-2025"
+SCRIPT_VERSION = "15-09-2025"
 
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'

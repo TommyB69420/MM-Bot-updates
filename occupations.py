@@ -382,7 +382,7 @@ def engineering_casework(player_data):
     your_character_name = (player_data or {}).get("Character Name", "")
 
     # Find all selectable tasks
-    radios = _find_elements(By.XPATH, ".//*[@id='holder_content']//input[@type='radio']")
+    radios = _find_elements_quiet(By.XPATH, ".//*[@id='holder_content']//input[@type='radio']")
     if not radios:
         print("No selectable tasks (no radio inputs found). Short cooldown.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))

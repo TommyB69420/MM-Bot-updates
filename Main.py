@@ -371,10 +371,10 @@ print("[Main] Discord bridge started.")
 # --- SCRIPT CHECK DETECTION & LOGOUT/LOGIN ---
 def perform_critical_checks(character_name):
     """
-    Fast, non-blocking check for logout and script check pages.
-    Uses instant checks with no WebDriverWait.
+    Fast, non-blocking check for logout, script check and GBH pages.
+    Uses instant checks with no WebDriverWait, or delays.
     """
-    # Ensure critical probes & any quick nav happen under the Selenium lock
+    # Ensure critical probes and any quick nav happen under the Selenium lock
     with global_vars.DRIVER_LOCK:
         # Check for logout
         try:
@@ -421,11 +421,45 @@ def perform_critical_checks(character_name):
             except Exception as e:
                 print(f"Error during fast script check DOM probe: {e}")
 
-        # If a script check is found — alert and terminate
+        # If a script check is found — alert discord, send puzzle HTML and arm the solution
         if script_check_found:
-            discord_message_content = f"{character_name}@here ADMIN SCRIPT CHECK AARRHHH FUUCCCKK"
-            send_discord_notification(discord_message_content)
-            exit()
+
+            # Already waiting for a Discord-provided solution. Don't re-send over and over
+            if getattr(global_vars, "_awaiting_script_solution", False):
+                return True
+
+            # Try to capture the puzzle prompt's innerHTML
+            prompt_html = ""
+            try:
+                # Primary prompt node we’ve seen on ADMIN checks
+                el = global_vars.driver.find_element(By.XPATH, "/html/body/div[4]/div[4]/div[1]/div[2]/center/font[3]")
+                prompt_html = el.get_attribute("innerHTML") or ""
+            except Exception:
+                # Fallback: grab a reasonable center/font block, else trim the page
+                try:
+                    el = global_vars.driver.find_element(By.XPATH, "(//center|//font)[last()]")
+                    prompt_html = el.get_attribute("innerHTML") or ""
+                except Exception:
+                    prompt_html = (global_vars.driver.page_source or "")[:1800]
+
+            # Trim for Discord asd send
+            safe_html = prompt_html.strip()
+            if len(safe_html) > 1800:
+                safe_html = safe_html[:1800] + "…"
+            send_discord_notification(
+                f"{character_name} @here ADMIN SCRIPT CHECK! ARGGGH FUCK\n"
+                f"Paste your solution with `!scriptcheck <answer>`\n"
+                f"```html\n{safe_html}\n```"
+            )
+
+            # Mark that we’re waiting for a Discord-provided solution
+            try:
+                setattr(global_vars, "_awaiting_script_solution", True)
+            except Exception:
+                pass
+
+            # Stay on the page and let the main loop tick; don’t hard-exit the process
+            return True
 
     return False  # No critical issues
 

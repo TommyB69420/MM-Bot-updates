@@ -6,9 +6,8 @@ import configparser
 import discord
 import time, random
 import global_vars
-from comms_journals import reply_to_sender
-from misc_functions import execute_sendmoney_to_player
-from occupations import execute_smuggle_for_player
+from comms_journals import reply_to_sender, send_discord_notification
+from misc_functions import execute_sendmoney_to_player, complete_script_check
 
 # ----- Config loading -----
 cfg = configparser.ConfigParser()
@@ -50,7 +49,6 @@ def worker():
                     ok = reply_to_sender(job["to"], job["text"])
                     print(f"[DiscordBridge] reply_to_sender -> {job['to']} | {'OK' if ok else 'FAILED'}")
 
-
                 elif action == "smuggle":
                     # Do NOT execute now; signal Main loop and let it run when timer/token allow.
                     global_vars._smuggle_request_target = job["target"]
@@ -61,6 +59,19 @@ def worker():
                 elif action == "sendmoney":
                     ok = execute_sendmoney_to_player(job["target"], job["amount"])
                     print(f"[DiscordBridge] sendmoney -> {job['target']} ${job['amount']} | {'OK' if ok else 'FAILED'}")
+
+                elif action == "script_check_submit":
+                    ok = complete_script_check(job["answer"])
+                    print(f"[DiscordBridge] script_check_submit -> '{job['answer']}' | {'OK' if ok else 'FAILED'}")
+                    # Discord ping on result
+                    if ok:
+                        send_discord_notification("Script check solved via Discord.")
+                        try:
+                            setattr(global_vars, "_awaiting_script_solution", False)
+                        except Exception:
+                            pass
+                    else:
+                        send_discord_notification("Script check NOT solved. Manual intervention required.")
 
                 else:
                     print(f"[DiscordBridge][WARN] Unknown action: {action}")
@@ -125,6 +136,19 @@ async def on_message(message: discord.Message):
         await message.reply(f"Queued smuggle for **{target}**.")
         return
 
+    # !scriptcheck <Answer>
+    if text.startswith(f"{CMD_PREFIX}scriptcheck"):
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.reply(f"Usage: `{CMD_PREFIX}scriptcheck <answer>`")
+            return
+        answer = parts[1].strip()
+        work_queue.put({"action": "script_check_submit", "answer": answer})
+        print(f"[DiscordBridge] Queued script_check_submit '{answer}'. Queue size: {work_queue.qsize()}")
+        await message.add_reaction("🧩")
+        await message.reply(f"Queued script-check answer: `{answer}`.")
+        return
+
     # !sendmoney <Player> <Amount>
     if text.startswith(f"{CMD_PREFIX}sendmoney"):
         parts = text.split(maxsplit=3)
@@ -176,8 +200,9 @@ async def on_message(message: discord.Message):
         await message.reply(
             "Commands:\n"
             f"- `{CMD_PREFIX}tell <player> <message>`\n"
-            f"- `:smuggle <player>` or `{CMD_PREFIX}smuggle <player>`\n"
+            f"- `{CMD_PREFIX}smuggle <player>`\n"
             f"- `{CMD_PREFIX}sendmoney <player> <amount>`\n"
+            f"- `{CMD_PREFIX}scriptcheck <answer>`\n"
             f"- `{CMD_PREFIX}ping`"
         )
 

@@ -1,11 +1,14 @@
 import json
 import requests
-from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
-
-from database_functions import set_player_apartment
-from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes, \
-    enqueue_funeral_smuggles
 import math
+import re
+import time
+from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
+from database_functions import set_player_apartment
+from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes, enqueue_funeral_smuggles
+from selenium.webdriver.common.by import By
+from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text
+import global_vars
 
 _PROCESSED_RO_KEYS = set()
 
@@ -799,13 +802,6 @@ def drug_offers(initial_player_data: dict):
 # Reply-to-sender helpers
 # ======================
 
-import re
-import time
-from selenium.webdriver.common.by import By
-from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text
-import global_vars
-
-# --- XPaths you already use / confirmed ---
 # Comms button to open the list page
 COMMS_BUTTON_XPATH = "//span[@id='comms_span_id']"
 
@@ -816,47 +812,21 @@ CONVO_SENDER_XPATH = ".//*[@id='conversation_holder']/div[1]/table/tbody/tr/td/d
 REPLY_BOX_XPATH = "//*[@id='holder_content']/p[1]/textarea"
 SEND_BTN_XPATH = "//*[@id='holder_content']/p[2]/input"
 
-
-def _normalize_name(s: str) -> str:
-    """Normalize a player name for comparison (case/space insensitive)."""
-    return re.sub(r"\s+", " ", (s or "")).strip().lower()
-
-
-def open_comms() -> bool:
-    """Click the Comms button to go to the Communications page."""
-    return _find_and_click(By.XPATH, COMMS_BUTTON_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS)
-
-
-def _thread_container_xpath(i: int) -> str:
-    """The outer container for the i-th thread block on the list page."""
-    return f"//*[@id='comms_holder']/form/div[{i}]"
-
-
-def _thread_contentbox_xpath(i: int) -> str:
-    """Preferred clickable area that opens the conversation (col 3 content)."""
-    # Example given for first: //*[@id="comms_holder"]/form/div[1]/table/tbody/tr/td[3]/a/div
-    return f"//*[@id='comms_holder']/form/div[{i}]/table/tbody/tr/td[3]/a/div"
-
-
-def _thread_any_clickable_in_td3_xpath(i: int) -> str:
-    """Fallback: any anchor under third column if exact contentbox path fails."""
-    return f"//*[@id='comms_holder']/form/div[{i}]/table/tbody/tr/td[3]//a"
-
-
 def find_and_open_thread_on_list(target_name: str, max_threads: int = 50) -> bool:
     """
     On the message page, loop visible thread blocks, read each block's text,
     and open the one containing `target_name` (case-insensitive). Then return True.
     """
-    if not open_comms():
+
+    if not _find_and_click(By.XPATH, COMMS_BUTTON_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS):
         print("[find_and_open_thread_on_list] Failed to open comms.")
         return False
 
-    norm_target = _normalize_name(target_name)
+    norm_target = re.sub(r"\s+", " ", (target_name or "")).strip().lower()
     print(f"[find_and_open_thread_on_list] Scanning list for: '{norm_target}'")
 
     for i in range(1, max_threads + 1):
-        container_xpath = _thread_container_xpath(i)
+        container_xpath = f"//*[@id='comms_holder']/form/div[{i}]"
         container = _find_element(By.XPATH, container_xpath, timeout=1, suppress_logging=True)
         if not container:
             if i == 1:
@@ -865,27 +835,24 @@ def find_and_open_thread_on_list(target_name: str, max_threads: int = 50) -> boo
                 print(f"[find_and_open_thread_on_list] End of list at index {i}.")
             break
 
-        # Grab the full visible text of this thread block for robust matching
+        # Grab full visible text for robust matching
         try:
-            block_text = global_vars.driver.execute_script(
-                "return arguments[0].innerText || arguments[0].textContent || '';", container
-            )
+            block_text = global_vars.driver.execute_script("return arguments[0].innerText || arguments[0].textContent || '';", container)
         except Exception:
             block_text = container.text or ""
-        norm_block = _normalize_name(block_text)
+
+        norm_block = re.sub(r"\s+", " ", (block_text or "")).strip().lower()
 
         if norm_target in norm_block:
             print(f"[find_and_open_thread_on_list] Match in thread {i}. Opening via content box…")
 
-            # Preferred click: content box in td[3]
-            contentbox_xpath = _thread_contentbox_xpath(i)
+            contentbox_xpath = f"//*[@id='comms_holder']/form/div[{i}]/table/tbody/tr/td[3]/a/div"
             if _find_and_click(By.XPATH, contentbox_xpath, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
                 return True
 
             print(f"[find_and_open_thread_on_list] Content box click failed for {i}, trying fallback…")
 
-            # Fallback: any anchor in td[3]
-            fallback_xpath = _thread_any_clickable_in_td3_xpath(i)
+            fallback_xpath = f"//*[@id='comms_holder']/form/div[{i}]/table/tbody/tr/td[3]//a"
             if _find_and_click(By.XPATH, fallback_xpath, pause=global_vars.ACTION_PAUSE_SECONDS):
                 return True
 
@@ -894,7 +861,6 @@ def find_and_open_thread_on_list(target_name: str, max_threads: int = 50) -> boo
 
     print("[find_and_open_thread_on_list] Target not present in current list.")
     return False
-
 
 def send_in_game_reply(body: str) -> bool:
     """Types `body` into the reply box and clicks Send Reply in the open conversation."""
@@ -920,17 +886,18 @@ def send_in_game_reply(body: str) -> bool:
 
 def _legacy_open_by_header(target_name: str, max_threads: int = 30) -> bool:
     """
-    Opens a message and replies to a person when the !tell discord command is sent
+    Opens a message and replies to a person when the !tell discord command is sent.
     Click each thread link (td[3]) and compare the header sender inside the open conversation.
     """
-    if not open_comms():
+
+    if not _find_and_click(By.XPATH, COMMS_BUTTON_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS):
+        print("[_legacy_open_by_header] Failed to open comms.")
         return False
 
-    norm_target = _normalize_name(target_name)
+    norm_target = re.sub(r"\s+", " ", (target_name or "")).strip().lower()
 
     for i in range(1, max_threads + 1):
-        # Click the content box in td[3] to open thread i
-        link_xpath = _thread_contentbox_xpath(i)
+        link_xpath = f"//*[@id='comms_holder']/form/div[{i}]/table/tbody/tr/td[3]/a/div"
         link_el = _find_element(By.XPATH, link_xpath, timeout=1, suppress_logging=True)
         if not link_el:
             break
@@ -939,7 +906,7 @@ def _legacy_open_by_header(target_name: str, max_threads: int = 30) -> bool:
             continue
 
         header_sender = _get_element_text(By.XPATH, CONVO_SENDER_XPATH, timeout=3) or ""
-        if _normalize_name(header_sender) == norm_target:
+        if re.sub(r"\s+", " ", header_sender).strip().lower() == norm_target:
             return True
 
         # Not a match; go back to the list and continue
@@ -948,7 +915,7 @@ def _legacy_open_by_header(target_name: str, max_threads: int = 30) -> bool:
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
         except Exception as e:
             print(f"[_legacy_open_by_header] Back navigation failed: {e}")
-            open_comms()
+            _find_and_click(By.XPATH, COMMS_BUTTON_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS)
 
     return False
 
