@@ -437,7 +437,7 @@ def perform_critical_checks(character_name):
             except Exception:
                 # Fallback: grab a reasonable center/font block, else trim the page
                 try:
-                    el = global_vars.driver.find_element(By.XPATH, "(//center|//font)[last()]")
+                    el = global_vars.driver.find_element(By.XPATH, "(//center | //font)[last()]")
                     prompt_html = el.get_attribute("innerHTML") or ""
                 except Exception:
                     prompt_html = (global_vars.driver.page_source or "")[:1800]
@@ -473,7 +473,8 @@ while True:
     action_performed_in_cycle = False
 
     # --- Fetch all timers first ---
-    all_timers = get_all_active_game_timers()
+    with global_vars.DRIVER_LOCK:
+        all_timers = get_all_active_game_timers()
     global_vars.jail_timers = all_timers  # Store for jail logic access
 
     # Fetch the player data
@@ -523,7 +524,8 @@ while True:
         continue
 
     # --- Fetch all game timers AFTER player data and BEFORE action logic ---
-    all_timers = get_all_active_game_timers()
+    with global_vars.DRIVER_LOCK:
+        all_timers = get_all_active_game_timers()
 
     if perform_critical_checks(character_name):
         continue
@@ -951,7 +953,8 @@ while True:
             continue
 
     # --- Re-fetch all game timers just before determining sleep duration ---
-    all_timers = get_all_active_game_timers()
+    with global_vars.DRIVER_LOCK:
+        all_timers = get_all_active_game_timers()
 
     # --- Return to the resting page if drifted ---
     resting_page_url = global_vars.config.get('Auth', 'RestingPage', fallback='').strip()

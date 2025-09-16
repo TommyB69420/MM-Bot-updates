@@ -2,11 +2,11 @@ import os
 import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.support.select import Select
 import global_vars
 from database_functions import _write_json_file, _read_json_file
-from global_vars import driver, wait, EXPLICIT_WAIT_SECONDS, ACTION_PAUSE_SECONDS, driver
+from global_vars import wait, EXPLICIT_WAIT_SECONDS, ACTION_PAUSE_SECONDS, driver
 
 # --- Helper Functions for WebDriver Interactions ---
 def _find_element(by_type, value, timeout=EXPLICIT_WAIT_SECONDS, suppress_logging=False):
@@ -88,11 +88,24 @@ def _find_and_send_keys(by_type, value, keys, timeout=EXPLICIT_WAIT_SECONDS, pau
             return False
     return False
 
+
 def _get_element_text(by_type, value, timeout=EXPLICIT_WAIT_SECONDS):
-    """Gets text from an element.
-    This adds the explicit wait which is useful when an element needs to load"""
-    element = _find_element(by_type, value, timeout)
-    return element.text.strip() if element else None
+    """Gets text from an element with stale-safe retries."""
+    attempts = 3
+    for _ in range(attempts):
+        element = _find_element(by_type, value, timeout)
+        if not element:
+            return None
+        try:
+            return element.text.strip()
+        except StaleElementReferenceException:
+            time.sleep(0.2)
+            continue
+        except Exception as e:
+            print(f"An error occurred while reading text from {by_type}: {value} - {e}")
+            return None
+    return None
+
 
 def _get_element_text_quiet(by_type, value, timeout=0.2):
     """
@@ -103,9 +116,22 @@ def _get_element_text_quiet(by_type, value, timeout=0.2):
     return element.text.strip() if element else None
 
 def _get_element_attribute(by_type, value, attribute, timeout=EXPLICIT_WAIT_SECONDS):
-    """Gets an attribute from an element."""
-    element = _find_element(by_type, value, timeout)
-    return element.get_attribute(attribute) if element else None
+    """Gets an attribute from an element, with stale-safe retries."""
+    attempts = 3
+    for _ in range(attempts):
+        element = _find_element(by_type, value, timeout)
+        if not element:
+            return None
+        try:
+            return element.get_attribute(attribute)
+        except StaleElementReferenceException:
+            # DOM changed; brief pause and try again with a fresh reference
+            time.sleep(0.2)
+            continue
+        except Exception as e:
+            print(f"An error occurred while getting attribute '{attribute}' from {by_type}: {value} - {e}")
+            return None
+    return None
 
 def regex_match_between(start_string, end_string, full_string):
     """Extracts text between two specified strings."""
