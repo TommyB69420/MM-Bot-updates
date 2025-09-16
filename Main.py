@@ -191,7 +191,7 @@ def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False) and location == home_city and occupation in ("Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"),
     "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
     "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower() and location == home_city,
+    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower() if location == home_city else "",
     "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False) and occupation == "Police Officer" and location == home_city,
     "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False) and occupation == "Police Officer" and location == home_city,
     "do_forensics_enabled": config.getboolean('Police', 'DoForensics', fallback=False) and occupation == "Police Officer" and location == home_city,
@@ -404,22 +404,10 @@ def perform_critical_checks(character_name):
         # Fastest check: by URL
         if "test.asp" in current_url or "activity" in current_url or "test" in current_url:
             script_check_found = True
+
         else:
-            # Fast DOM probe (no wait), safely handle stale elements
-            try:
-                elements = global_vars.driver.find_elements(By.XPATH, "//font")
-                for e in elements:
-                    try:
-                        text = e.text.lower()
-                        if "first" in text and "characters" in text:
-                            script_check_found = True
-                            break
-                    except StaleElementReferenceException:
-                        print("Stale element during fast script check DOM probe.")
-                    except Exception as inner_e:
-                        print(f"Unexpected error while probing for script check: {inner_e}")
-            except Exception as e:
-                print(f"Error during fast script check DOM probe: {e}")
+            # look to add content-based probes when we next see a script check. the words will need to be soley specific to the script check page
+            pass
 
         # If a script check is found — alert discord, send puzzle HTML and arm the solution
         if script_check_found:
@@ -431,7 +419,7 @@ def perform_critical_checks(character_name):
             # Try to capture the puzzle prompt's innerHTML
             prompt_html = ""
             try:
-                # Primary prompt node we’ve seen on ADMIN checks
+                # Primary prompt node we’ve seen on Script checks
                 el = global_vars.driver.find_element(By.XPATH, "/html/body/div[4]/div[4]/div[1]/div[2]/center/font[3]")
                 prompt_html = el.get_attribute("innerHTML") or ""
             except Exception:
