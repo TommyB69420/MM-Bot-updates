@@ -448,11 +448,21 @@ def collect_evidence():
         print("FAILED: Could not read case contents for evidence check.")
         return False
 
-    # for Torches, do Fire Investigations only when the section exists and says 'None'
+    # For Torches, only do Fire Investigations if DNA & Fingerprint tests are completed AND results are "None"
     if _is_torch() and "Fire Investigation:" in h and "None" in h:
-        print("FIRE INVESTIGATION REQUIRED")
-        _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]")  # Fire investigation
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        fp_value = (_get_case_cell("Fingerprint Evidence:") or "").strip().lower()
+        dna_value = (_get_case_cell("DNA Log:") or "").strip().lower()
+
+        # Neither contains numbers or suspect names (i.e., results are "none")
+        fp_done_and_none = bool(fp_value) and fp_value == "none"
+        dna_done_and_none = bool(dna_value) and dna_value == "none"
+
+        if fp_done_and_none and dna_done_and_none:
+            print("FIRE INVESTIGATION REQUIRED (DNA & fingerprints both completed and returned None)")
+            _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]")  # Fire investigation
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        else:
+            print("Skipping Fire Investigation – fingerprint/DNA not yet completed or not None.")
 
     # Fingerprints — only dust if the value cell is blank
     fp_value = _get_case_cell("Fingerprint Evidence:")
@@ -498,7 +508,7 @@ def collect_evidence():
         else:
             print("FAILED: Could not click DNA button.")
     else:
-        print(f"DNA evidence already present {dna_content}). Skipping swab.")
+        print(f"DNA evidence already present ({dna_content}). Skipping swab.")
 
     # Travel — only add if the value cell is blank
     # NOTE: "No valid travel evidence found." counts as PRESENT (do not click again)
@@ -690,14 +700,18 @@ def solve_case(character_name):
         return True
 
     # If awaiting fire investigation results, return the case
+    # Only treat as "pending" if Fire has actually been requested (i.e., not blank/none)
     if _is_torch():
         fire_cell = _get_case_cell("Fire Investigation:")
         fire_text = (fire_cell or "").strip().lower()
-        # treat as pending if: blank, "none", or doesn't include the word "identity"
-        if not fire_text or fire_text == "none" or ("identity" not in fire_text):
+        fire_requested = bool(fire_text) and fire_text != "none"
+
+        if fire_requested and ("identity" not in fire_text):
             print("Fire Investigation pending - Return case.")
             _return_case()
             return True
+        elif not fire_requested:
+            print("Torch case – Fire Investigation not requested yet (waiting for FP/DNA results).")
 
     # Parse cues AFTER evidence work
     cues = _parse_case_for_signals()
