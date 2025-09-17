@@ -753,6 +753,11 @@ def solve_case(character_name):
                     _bury_case()
                     return True
 
+                elif fail_box and "you can't use staff" in fail_box.get_attribute("innerText").lower():
+                    print("Suspect is an admin/staff account – burying case.")
+                    _bury_case()
+                    return True
+
                 if not _close_case():
                     print("Close failed after 911 suspect; bury as fallback.")
                     _bury_case()
