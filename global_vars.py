@@ -111,7 +111,7 @@ MIN_POLLING_INTERVAL_UPPER = 80
 startup_login_ping_sent = False # One time Discord ping on startup (guard)
 
 # --- Script Version ---
-SCRIPT_VERSION = "15-09-2025"
+SCRIPT_VERSION = "17-09-2025"
 
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'
@@ -142,6 +142,7 @@ CASINO_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "casino_next_check.txt"
 MINOR_CRIME_COOLDOWN_KEY = 'minor_crime_cooldown'
 MAJOR_CRIME_COOLDOWN_KEY = 'major_crime_cooldown'
 PLAYER_HOME_CITY_KEY = 'home_city'
+LAST_KNOWN_CITY = ""
 
 # Global variables for script's internal cooldowns
 # Game timers
@@ -292,4 +293,14 @@ PROMO_MAP = {
     "sergeant": "two",
     "senior sergeant": "two",
     "detective": "one",
+}
+
+# Cities / travel canonicalization (left = inputs we accept; right = canonical name used by MM URLs/UI)
+CITY_ALIASES = {
+    "auckland": "Auckland",
+    "ak": "Auckland",
+    "chicago": "Chicago",
+    "cago": "Chicago",
+    "beirut": "Beirut",
+    "rut": "Beirut",
 }

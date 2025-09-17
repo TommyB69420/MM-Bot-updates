@@ -7,7 +7,7 @@ import discord
 import time, random
 import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
-from misc_functions import execute_sendmoney_to_player, complete_script_check
+from misc_functions import execute_sendmoney_to_player, complete_script_check, execute_travel_to_city
 
 # ----- Config loading -----
 cfg = configparser.ConfigParser()
@@ -59,6 +59,17 @@ def worker():
                 elif action == "sendmoney":
                     ok = execute_sendmoney_to_player(job["target"], job["amount"])
                     print(f"[DiscordBridge] sendmoney -> {job['target']} ${job['amount']} | {'OK' if ok else 'FAILED'}")
+
+
+                elif action == "travel":
+                    # Pull the last known city from globals (set by the main loop). If empty, we skip the "already-in-city" check.
+                    current_city = getattr(global_vars, "LAST_KNOWN_CITY", "")
+                    ok = execute_travel_to_city(
+                        job["target_city"],
+                        current_city=current_city,
+                        discord_user_id=job.get("discord_user_id"),
+                    )
+                    print(f"[DiscordBridge] travel -> {job['target_city']} | {'OK' if ok else 'FAILED'}")
 
                 elif action == "script_check_submit":
                     ok = complete_script_check(job["answer"])
@@ -149,6 +160,35 @@ async def on_message(message: discord.Message):
         await message.reply(f"Queued script-check answer: `{answer}`.")
         return
 
+    # !travel <City>
+    if text.startswith(f"{CMD_PREFIX}travel"):
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            # Build allowed set dynamically from global aliases
+            aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
+            allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+            await message.reply(f"Usage: `{CMD_PREFIX}travel <City>`\nAllowed: {allowed}")
+            return
+
+        key = parts[1].strip().lower()
+        aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
+        if key not in aliases:
+            allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+            await message.reply(f"City must be one of: {allowed}.")
+            return
+
+        destination = aliases[key]
+
+        work_queue.put({
+            "action": "travel",
+            "target_city": destination,
+            "discord_user_id": message.author.id,  # used to resolve per-user webhook
+        })
+        print(f"[DiscordBridge] Queued travel -> {destination}. Queue size: {work_queue.qsize()}")
+        await message.add_reaction("🛫")
+        await message.reply(f"Queued travel to **{destination}**.")
+        return
+
     # !sendmoney <Player> <Amount>
     if text.startswith(f"{CMD_PREFIX}sendmoney"):
         parts = text.split(maxsplit=3)
@@ -197,14 +237,21 @@ async def on_message(message: discord.Message):
 
     # Use the help feature to get commands
     if text in {f"{CMD_PREFIX}help", f"{CMD_PREFIX}commands"}:
+        # Build allowed city list dynamically from globals
+        aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
+        allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+
         await message.reply(
             "Commands:\n"
             f"- `{CMD_PREFIX}tell <player> <message>`\n"
             f"- `{CMD_PREFIX}smuggle <player>`\n"
             f"- `{CMD_PREFIX}sendmoney <player> <amount>`\n"
+            f"- `{CMD_PREFIX}travel <City>` — Allowed: {allowed}\n"
             f"- `{CMD_PREFIX}scriptcheck <answer>`\n"
             f"- `{CMD_PREFIX}ping`"
         )
+        return
+
 
 def run_discord_bot():
     print("[DiscordBridge] Starting Discord client...")

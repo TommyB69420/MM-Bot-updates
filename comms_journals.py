@@ -9,8 +9,69 @@ from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option
 from selenium.webdriver.common.by import By
 from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text
 import global_vars
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 _PROCESSED_RO_KEYS = set()
+
+# ----- New Conversation XPATHs -----
+NEW_CONVO_BTN_XPATH  = "//*[@id='holder_content']/p[1]/a[3]"
+NEW_CONVO_TO_XPATH   = "//*[@id='toname']"
+NEW_CONVO_BODY_XPATH = "//*[@id='holder_content']/form/table/tbody/tr[5]/td[2]/textarea"
+NEW_CONVO_SEND_XPATH = "//*[@id='holder_content']/form/p[2]/input"
+
+def start_new_conversation(target: str, body: str, timeout: int = 12) -> bool:
+    """
+    Opens a brand-new conversation to `target` and sends `body`.
+    Returns True on success, False on any failure.
+    """
+    # Get the driver from your globals in a way that tolerates either naming
+    driver = getattr(global_vars, "driver", getattr(global_vars, "DRIVER", None))
+    if driver is None:
+        print("[COMMS] No webdriver instance on global_vars.")
+        return False
+
+    wait = WebDriverWait(driver, timeout)
+    try:
+        # Ensure the "New Conversation" button is reachable. If not, try opening comms first.
+        try:
+            wait.until(EC.element_to_be_clickable((By.XPATH, NEW_CONVO_BTN_XPATH)))
+        except TimeoutException:
+            try:
+                # Fall back to opening the Comms UI (uses your existing constant)
+                wait.until(EC.element_to_be_clickable((By.XPATH, COMMS_BUTTON_XPATH))).click()
+                wait.until(EC.element_to_be_clickable((By.XPATH, NEW_CONVO_BTN_XPATH)))
+            except Exception:
+                # One more short wait then proceed (some UIs render slowly)
+                wait.until(EC.element_to_be_clickable((By.XPATH, NEW_CONVO_BTN_XPATH)))
+
+        # Start the new conversation
+        wait.until(EC.element_to_be_clickable((By.XPATH, NEW_CONVO_BTN_XPATH))).click()
+
+        # Enter target name
+        to_input = wait.until(EC.presence_of_element_located((By.XPATH, NEW_CONVO_TO_XPATH)))
+        to_input.clear()
+        to_input.send_keys(target)
+
+        # Enter message body
+        body_box = wait.until(EC.presence_of_element_located((By.XPATH, NEW_CONVO_BODY_XPATH)))
+        body_box.clear()
+        body_box.send_keys(body)
+
+        # Send
+        send_btn = wait.until(EC.element_to_be_clickable((By.XPATH, NEW_CONVO_SEND_XPATH)))
+        send_btn.click()
+
+        # Optional: tiny settle delay; your UI may redirect back to thread list
+        time.sleep(0.5)
+        print(f"[COMMS] New conversation started with '{target}'.")
+        return True
+
+    except Exception as e:
+        print(f"[COMMS] start_new_conversation failed for '{target}': {e}")
+        return False
+
 
 def send_discord_notification(message):
     """Sends a message to the configured Discord webhook, reading URL from settings.ini."""
@@ -919,23 +980,72 @@ def _legacy_open_by_header(target_name: str, max_threads: int = 30) -> bool:
 
     return False
 
-def reply_to_sender(sender: str, body: str) -> bool:
+def reply_to_sender(target: str, body: str) -> bool:
     """
-    Full flow:
-      1) Open comms list, scan for `sender`, click the conversation content box
-      2) Send reply `body`
-      3) Fallback: open each thread and check header sender if list scan didn't match
+    Attempts to open an existing thread with `target` and reply.
+    If no existing thread is found, falls back to starting a new conversation.
+    Returns True on success, False on failure.
     """
-    # Primary: list-page text scan + click content box
-    if find_and_open_thread_on_list(sender):
-        return send_in_game_reply(body)
+    driver = getattr(global_vars, "driver", getattr(global_vars, "DRIVER", None))
+    if driver is None:
+        print("[COMMS] No webdriver instance on global_vars.")
+        return False
 
-    # Fallback: open each thread and compare header sender
-    if _legacy_open_by_header(sender):
-        return send_in_game_reply(body)
+    wait = WebDriverWait(driver, 12)
 
-    print("[reply_to_sender] Could not locate sender in list or header.")
-    return False
+    try:
+        # 1) Ensure we're on the Comms page (your existing logic likely already does this)
+        #    Example (keep your own navigation if different):
+        try:
+            wait.until(EC.presence_of_element_located((By.XPATH, REPLY_BOX_XPATH)))
+        except TimeoutException:
+            # Open Comms pane if reply box isn't visible yet
+            try:
+                wait.until(EC.element_to_be_clickable((By.XPATH, COMMS_BUTTON_XPATH))).click()
+            except Exception:
+                pass
+
+        # 2) Your existing two-step find logic:
+        #    a) Scan list for a matching sender; b) Legacy open by header
+        found = False
+        try:
+            # a) First pass list search (your existing helper)
+            found = find_and_open_thread_on_list(target)
+        except Exception as e:
+            print(f"[COMMS] find_and_open_thread_on_list error: {e}")
+
+        if not found:
+            try:
+                # b) Legacy header compare (your existing helper)
+                found = _legacy_open_by_header(target)
+            except Exception as e:
+                print(f"[COMMS] _legacy_open_by_header error: {e}")
+
+        # 3) If still not found: start a brand-new conversation (NEW FEATURE)
+        if not found:
+            print(f"[COMMS] No existing thread for '{target}'. Falling back to new conversation...")
+            return start_new_conversation(target, body)
+
+        # 4) We have the thread open; send the reply (keep your existing logic)
+        try:
+            reply_box = wait.until(EC.presence_of_element_located((By.XPATH, REPLY_BOX_XPATH)))
+            reply_box.clear()
+            reply_box.send_keys(body)
+
+            send_btn = wait.until(EC.element_to_be_clickable((By.XPATH, SEND_BTN_XPATH)))
+            send_btn.click()
+            time.sleep(0.3)
+            print(f"[COMMS] Replied to existing thread for '{target}'.")
+            return True
+
+        except Exception as e:
+            print(f"[COMMS] Reply failed inside existing thread for '{target}': {e}")
+            return False
+
+    except Exception as e:
+        print(f"[COMMS] reply_to_sender fatal error for '{target}': {e}")
+        return False
+
 
 def _clean_amount(amount_str: str) -> int | None:
     """

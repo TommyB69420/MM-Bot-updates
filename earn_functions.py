@@ -137,14 +137,14 @@ def diligent_worker(character_name, which_player=None):
             print(f"UseDillyOn is blank. Falling back to own character name: {target}")
 
         # Enter the player name into the textbox (helper will clear and send keys)
-        textbox_xpath = "//*[@id='content']/form[1]/table/tfoot/tr[2]/td[1]/input"
+        textbox_xpath = "//input[@name='target']"
         if not _find_and_send_keys(By.XPATH, textbox_xpath, target):
             print("FAILED: Diligent Worker textbox not found or not writable.")
             global_vars._script_skill_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
             return False
 
         # Click the Motivate! button
-        button_xpath = "//*[@id='content']/form[1]/table/tfoot/tr[2]/td[2]/input"
+        button_xpath = "//input[@value='Motivate!']"
         if not _find_and_click(By.XPATH, button_xpath):
             print(f"FAILED: Could not click 'Motivate!' for '{target}'.")
             global_vars._script_skill_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))

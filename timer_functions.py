@@ -59,6 +59,7 @@ def get_all_active_game_timers():
     timers = {
         'earn_time_remaining': 0,
         'action_time_remaining': 0,
+        'travel_time_remaining': 0,
         'case_time_remaining': 0,
         'launder_time_remaining': 0,
         'trafficking_time_remaining': 0,
@@ -90,6 +91,7 @@ def get_all_active_game_timers():
     timer_xpaths = {
         'earn_time_remaining': "//div[@id='user_timers_holder']/div[contains(@title, 'Next Earn')]/form/span[@class='donation_timer']",
         'action_time_remaining': "//div[@id='user_timers_holder']/div[contains(@title, 'Next Action')]/form/span[@class='donation_timer']",
+        'travel_time_remaining': "//div[@id='user_timers_holder']/div/form[@name='travel']/span[@class='donation_timer']",
         'case_time_remaining': "//div[@id='user_timers_holder']/div[contains(@title, 'Next Case')]/form/span[@class='donation_timer']",
         'launder_time_remaining': "//div[@id='user_timers_holder']/div[contains(@title, 'Next Launder')]/form/span[@class='donation_timer']",
         'trafficking_time_remaining': "//div[@id='user_timers_holder']/div/form[@name='traffick']/span[@class='donation_timer']",
