@@ -162,79 +162,98 @@ def read_and_send_new_messages():
 
     while True:
         try:
-            # XPath for the clickable link within each message thread summary row
-            message_thread_link_xpath = f"/html/body/div[4]/div[4]/div[3]/form/div[{message_thread_count}]/table/tbody/tr[2]/td[3]/a[@class='mailRowContent']"
+            # Work at the thread-container level
+            container_xpath = f"//*[@id='comms_holder']/form/div[{message_thread_count}]"
+            container_el = _find_element(By.XPATH, container_xpath, timeout=1, suppress_logging=True)
 
-            # Check if the message thread element exists
-            message_thread_link_element = _find_element(By.XPATH, message_thread_link_xpath, timeout=1)
-
-            if not message_thread_link_element:
-                # No more message threads found, break the loop
+            if not container_el:
                 print(f"No more message threads found at index {message_thread_count}. Exiting message loop.")
                 break
 
-            # Click to open the message thread (conversation)
-            if _find_and_click(By.XPATH, message_thread_link_xpath, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
-                message_thread_processed = True
+            # Detect NEW marker inside this container
+            is_new = _find_element(
+                By.XPATH, f"{container_xpath}//td[@id='comms_msg_top_super']",
+                timeout=0.5, suppress_logging=True
+            ) is not None
 
-                sender_xpath_in_conversation = ".//*[@id='conversation_holder']/div[1]/table/tbody/tr/td/div[1]/div[1]/div/a[2]"
-                sender_name_in_conversation = _get_element_text(By.XPATH, sender_xpath_in_conversation, timeout=3) or "Unknown Sender (In-Conversation)"
-                print(f"Opened conversation with {sender_name_in_conversation}.")
-                sender_name_list = sender_name_in_conversation
+            if not is_new:
+                # Not unread; move to next
+                message_thread_count += 1
+                continue
 
-                # If the message is from Administrator, mark all messages as read and skip
-                if sender_name_in_conversation.strip().lower() == "administrator":
-                    print("Message is from Administrator. Marking all messages as read.")
-                    try:
-                        # Go back to main Communications page
-                        _find_and_click(By.XPATH, "//span[@id='comms_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS)
-                        # Click MARK ALL READ
-                        _find_and_click(By.XPATH, "//b[normalize-space()='MARK ALL READ']",
-                                        pause=global_vars.ACTION_PAUSE_SECONDS)
-                    except Exception as admin_e:
-                        print(f"ERROR marking Administrator messages as read: {admin_e}")
-                    return message_thread_processed
+            # Try clicking the thread content (preferred) with fallbacks
+            contentbox_xpath = f"{container_xpath}/table/tbody/tr/td[3]/a/div"
+            link_xpath_fallback_1 = f"{container_xpath}/table/tbody/tr/td[3]//a[contains(@class,'mailRowContent')]"
+            link_xpath_fallback_2 = f"{container_xpath}//a[contains(@class,'mailRowContent')]"
 
-                # XPaths for individual messages within the opened conversation
-                message_body_elements = _find_elements(By.XPATH, "//div[@id='conversation_holder']//div[@style='padding-top:10px; color: #fff']")
-                message_timestamps = _find_elements(By.XPATH, "//div[@id='conversation_holder']//div[@class='mailRowTimestamp']/abbr[@class='timestamp']")
+            clicked = (
+                _find_and_click(By.XPATH, contentbox_xpath, pause=global_vars.ACTION_PAUSE_SECONDS * 2)
+                or _find_and_click(By.XPATH, link_xpath_fallback_1, pause=global_vars.ACTION_PAUSE_SECONDS * 2)
+                or _find_and_click(By.XPATH, link_xpath_fallback_2, pause=global_vars.ACTION_PAUSE_SECONDS * 2)
+            )
 
-                if not message_body_elements:
-                    print(f"No new message content found in conversation with {sender_name_list}.")
-                    send_discord_notification(f"In-Game Message from {sender_name_list}: Could not read message content (no bodies found).")
-                else:
-                    try:
-                        print(f"Processing top message from {sender_name_list}...")
-                        top_body_element = message_body_elements[0]
-                        actual_message = global_vars.driver.execute_script(
-                            "return arguments[0].textContent || arguments[0].innerText;", top_body_element).strip()
-                        actual_message = actual_message.replace('\n', ' ').replace('\r', '').replace('\t', ' ')
-                        actual_message = re.sub(r'\s\s+', ' ', actual_message).strip()
-                        actual_message = re.sub(r'[^0-9a-zA-Z:_?/ \-]', '', actual_message)
+            if not clicked:
+                print(f"FAILED: Could not click unread thread at index {message_thread_count}.")
+                message_thread_count += 1
+                continue
 
-                        timestamp_text = "Unknown Time"
-                        if message_timestamps:
-                            try:
-                                ts_element = message_timestamps[0]
-                                timestamp_text = ts_element.text.strip()
-                            except Exception as ts_e:
-                                print(
-                                    f"Warning: Could not get timestamp for top message from {sender_name_list}: {ts_e}")
+            # Now inside the conversation
+            message_thread_processed = True
+            sender_xpath_in_conversation = ".//*[@id='conversation_holder']/div[1]/table/tbody/tr/td/div[1]/div[1]/div/a[2]"
+            sender_name_in_conversation = _get_element_text(By.XPATH, sender_xpath_in_conversation, timeout=3) or "Unknown Sender (In-Conversation)"
+            print(f"Opened conversation with {sender_name_in_conversation}.")
+            sender_name_list = sender_name_in_conversation
 
-                        print(f"Read message from {sender_name_list} at {timestamp_text}: '{actual_message}'")
-                        send_discord_notification(
-                            f"In-Game Message from {sender_name_list} at {timestamp_text}: **{actual_message}**")
-                    except Exception as e:
-                        print(f"Error reading top message from {sender_name_list}: {e}")
-                        send_discord_notification(
-                            f"Script Error: Failed to read top message from {sender_name_list}.")
+            # Admin case: mark all read
+            if sender_name_in_conversation.strip().lower() == "administrator":
+                print("Message is from Administrator. Marking all messages as read.")
+                try:
+                    _find_and_click(By.XPATH, "//span[@id='comms_span_id']", pause=global_vars.ACTION_PAUSE_SECONDS)
+                    _find_and_click(By.XPATH, "//b[normalize-space()='MARK ALL READ']", pause=global_vars.ACTION_PAUSE_SECONDS)
+                except Exception as admin_e:
+                    print(f"ERROR marking Administrator messages as read: {admin_e}")
+                return message_thread_processed
 
-                # Go back to the message list after processing the current conversation
-                global_vars.driver.back()
-                time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+            # Extract messages
+            message_body_elements = _find_elements(By.XPATH, "//div[@id='conversation_holder']//div[@style='padding-top:10px; color: #fff']")
+            message_timestamps = _find_elements(By.XPATH, "//div[@id='conversation_holder']//div[@class='mailRowTimestamp']/abbr[@class='timestamp']")
+
+            if not message_body_elements:
+                print(f"No new message content found in conversation with {sender_name_list}.")
+                send_discord_notification(f"In-Game Message from {sender_name_list}: Could not read message content (no bodies found).")
             else:
-                print(f"FAILED: Failed to click on message thread link at index {message_thread_count}.")
-                send_discord_notification(f"Failed to open in-game message thread")
+                try:
+                    print(f"Processing top message from {sender_name_list}...")
+                    top_body_element = message_body_elements[0]
+                    actual_message = global_vars.driver.execute_script(
+                        "return arguments[0].textContent || arguments[0].innerText;", top_body_element).strip()
+                    actual_message = actual_message.replace('\n', ' ').replace('\r', '').replace('\t', ' ')
+                    actual_message = re.sub(r'\s\s+', ' ', actual_message).strip()
+                    actual_message = re.sub(r'[^0-9a-zA-Z:_?/ \-]', '', actual_message)
+
+                    timestamp_text = "Unknown Time"
+                    if message_timestamps:
+                        try:
+                            ts_element = message_timestamps[0]
+                            timestamp_text = ts_element.text.strip()
+                        except Exception as ts_e:
+                            print(f"Warning: Could not get timestamp for top message from {sender_name_list}: {ts_e}")
+
+                    print(f"Read message from {sender_name_list} at {timestamp_text}: '{actual_message}'")
+                    send_discord_notification(
+                        f"In-Game Message from {sender_name_list} at {timestamp_text}: **{actual_message}**")
+                except Exception as e:
+                    print(f"Error reading top message from {sender_name_list}: {e}")
+                    send_discord_notification(
+                        f"Script Error: Failed to read top message from {sender_name_list}.")
+
+            # Return to the main page and exit after handling the first unread
+            try:
+                global_vars.driver.get(initial_url)
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+            except Exception as e:
+                print(f"Error returning to initial URL after message processing: {e}")
+            return True
 
         except Exception as e:
             print(f"Error processing message thread {message_thread_count}: {e}. Skipping to next thread.")
