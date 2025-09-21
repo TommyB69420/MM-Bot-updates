@@ -37,9 +37,9 @@ def get_game_timer_remaining(timer_xpath):
 
         if current_game_time_parsed and next_timer_datetime:
             time_difference = next_timer_datetime - current_game_time_parsed
-            time_to_wait_seconds = time_difference.total_seconds()
-            additional_random_wait = random.uniform(2, 5)
-            return max(0, time_to_wait_seconds + additional_random_wait)
+            time_to_wait_seconds = float(time_difference.total_seconds())
+            additional_wait = 1.0
+            return max(0.0, time_to_wait_seconds + additional_wait)
         else:
             print(f"Warning: Could not parse game time or timer from XPath: {timer_xpath}. Retrying...")
             time.sleep(random.uniform(2, 5))

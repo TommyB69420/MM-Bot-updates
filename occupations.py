@@ -101,7 +101,7 @@ def community_services(player_data):
     global_vars._script_action_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
     return False
 
-def manufacture_drugs(player_data):
+def manufacture_drugs():
     """
     Manages and performs drug manufacturing operations.
     Only works if occupation is 'Gangster'.
@@ -274,7 +274,6 @@ def laundering(player_data):
     print(f"Successfully initiated laundering of ${amt}.")
     return True
 
-
 def medical_casework(player_data):
     """
     Manages and processes hospital casework.
@@ -330,7 +329,7 @@ def medical_casework(player_data):
     table_html = _get_element_attribute(By.XPATH, table_xpath, "innerHTML")
     if not table_html:
         print("No hospital casework table found.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(22, 43))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
     task_clicked = False
@@ -356,7 +355,7 @@ def medical_casework(player_data):
         return True
     else:
         print("No casework tasks found. Setting fallback cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 48))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
 def engineering_casework(player_data):
@@ -385,7 +384,7 @@ def engineering_casework(player_data):
     radios = _find_elements_quiet(By.XPATH, ".//*[@id='holder_content']//input[@type='radio']")
     if not radios:
         print("No selectable tasks (no radio inputs found). Short cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
     # Loop over radios, skip your own
@@ -403,7 +402,7 @@ def engineering_casework(player_data):
 
     if not selected_radio:
         print("All available engineering tasks belong to you. Short cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
     # Click the chosen radio
@@ -412,7 +411,7 @@ def engineering_casework(player_data):
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     except Exception as e:
         print(f"FAILED: Could not click the selected radio: {e}")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
     # Submit the nearest form for that radio (its ancestor form)
@@ -425,7 +424,7 @@ def engineering_casework(player_data):
         return True
     except Exception as e:
         print(f"FAILED: Could not submit the selected task: {e}")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(33, 45))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
 def judge_casework(player_data):
@@ -565,7 +564,7 @@ def lawyer_casework():
     court_menu_xpath = "//span[@class='court']"
     if not _find_and_click(By.XPATH, court_menu_xpath):
         print("FAILED: Navigation to Court menu for Lawyer Cases failed. Setting short cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 180))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
     print("Successfully navigated to Lawyer Cases Page. Checking for cases...")
@@ -589,7 +588,7 @@ def lawyer_casework():
                 print(f"ERROR: Error processing a lawyer case row: {e}")
 
     # No defendable cases found — set standard back-off.
-    wait_time = random.uniform(180, 300)
+    wait_time = random.uniform(120, 180)
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=wait_time)
     print(f"No lawyer cases found. Next check in {wait_time:.2f} seconds.")
     return False
@@ -617,21 +616,21 @@ def banker_laundering():
 
     print("Successfully navigated to Banker Laundering Service page. Checking for requests...")
 
-    # --- Find table ---
+    # Find launder table
     requests_table = _find_element(By.XPATH, "//div[@id='holder_content']/table")
     if not requests_table:
         print("No banker laundering requests table found.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(180, 300))
         return False
 
-    # --- Rows (skip header) ---
+    # Rows (skip header)
     rows = requests_table.find_elements(By.TAG_NAME, "tr")[1:]
     if not rows:
         print("No pending laundering requests from other players.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(180, 300))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(180, 220))
         return False
 
-    # --- Filter eligible (>= $5) ---
+    # Filter eligible (>= $5)
     eligible_rows = []
     small_count = 0
 
@@ -663,12 +662,12 @@ def banker_laundering():
     if not eligible_rows:
         msg = "All laundering requests are less than $5." if small_count else "No eligible requests found."
         print(f"{msg} (sub-$5 count: {small_count})")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(180, 300))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(180, 220))
         return False
     if small_count:
         print(f"Info: filtered out {small_count} sub-$5 request(s).")
 
-    # --- Take first eligible ---
+    # Take first eligible
     selected = eligible_rows[0]
     try:
         # Name (link preferred)
@@ -690,7 +689,7 @@ def banker_laundering():
 
         print(f"Selected request from {client_name} for ${amount_to_process}.")
 
-        # Click name (if link) — guard pattern to avoid “unreachable” diagnostics
+        # Click name — guard pattern to avoid “unreachable” diagnostics
         clicked_ok = False
         if link_el:
             try:
@@ -704,14 +703,14 @@ def banker_laundering():
             print("FAILED: Client name is not a link; cannot open transaction page.")
 
         if not clicked_ok:
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
 
         # Pick "Launder Money" in dropdown
         dropdown_el = _find_element(By.XPATH, "//select[@name='display']")
         if not dropdown_el:
             print("FAILED: Could not find the 'What do you wish to do?' dropdown.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
 
         try:
@@ -720,24 +719,24 @@ def banker_laundering():
             print("Selected 'Launder Money'.")
         except NoSuchElementException:
             print("FAILED: 'Launder Money' option not present in dropdown.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
         except Exception as e:
             print(f"FAILED: Error selecting dropdown value: {e}")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
 
         # Auto Funds Transfer
         if not _find_and_click(By.XPATH, "//input[@name='B1']", timeout=global_vars.EXPLICIT_WAIT_SECONDS, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
             print("FAILED: Could not click first 'Submit' button after selecting 'Launder Money'.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
 
         print("Submitted transaction type. Proceeding to Auto Funds Transfer…")
 
         if not _find_and_click(By.XPATH, "//input[@name='B1']", timeout=global_vars.EXPLICIT_WAIT_SECONDS, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
             print("FAILED: Could not click 'Auto Funds Transfer' button.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
 
         print(f"SUCCESS: Completed laundering and auto-transferred funds for {client_name} (${amount_to_process}).")
@@ -745,11 +744,11 @@ def banker_laundering():
 
     except NoSuchElementException:
         print("ERROR: Missing elements while processing the selected request. Backing off shortly.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
     except Exception as e:
         print(f"ERROR: Unexpected exception during laundering flow: {e}. Short cooldown set.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
 
 def banker_add_clients(current_player_home_city=None):
@@ -766,7 +765,7 @@ def banker_add_clients(current_player_home_city=None):
         current_player_home_city = current_player_home_city.get("Home City")
     if not isinstance(current_player_home_city, str) or not current_player_home_city.strip():
         print("ERROR: Could not determine current player's home city. Cannot filter clients.")
-        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
     current_player_home_city = current_player_home_city.strip()
 
@@ -798,14 +797,14 @@ def banker_add_clients(current_player_home_city=None):
 
     print(f"Found {len(potential_clients)} potential clients to add: {potential_clients}")
 
-    # Ensure we're on the Banker page *before* scraping existing clients
+    # Ensure we're on the Banker page before scraping existing clients
     curr_url = (_get_current_url() or "").lower()
     if "banklaunder.asp" not in curr_url:
         if not _navigate_to_page_via_menu(
             "//span[@class='income']",
             "//a[normalize-space()='Convert Dirty Money']",
             "Banker Page"):
-            global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+            global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
             return False
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     else:
@@ -831,7 +830,7 @@ def banker_add_clients(current_player_home_city=None):
     add_client_link = _find_element(By.XPATH, add_client_tab_xpath)
     if not add_client_link:
         print("FAILED: Could not find 'Establish New Deal' link.")
-        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
 
     try:
@@ -839,7 +838,7 @@ def banker_add_clients(current_player_home_city=None):
         time.sleep(global_vars.ACTION_PAUSE_SECONDS)
     except Exception as e:
         print(f"ERROR: Failed to click 'Establish New Deal' link: {e}")
-        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
 
     for client_to_add in potential_clients:
@@ -1019,7 +1018,7 @@ def fire_casework(initial_player_data):
             print(f"WARNING: Could not click an Inspect link: {e}")
 
     print("No valid fire inspections available. Setting fallback cooldown.")
-    global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 48))
+    global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
     return False
 
 def fire_duties():
@@ -1064,7 +1063,6 @@ def fire_duties():
     else:
         print("Train button not found.")
         return False
-
 
 def customs_blind_eyes():
     """
@@ -1244,7 +1242,7 @@ def mortician_autopsy():
         "Autopsy Work"):
         print("FAILED: Could not open Autopsy Work.")
         # keep it lightweight; brief backoff like other flows
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 90))
         return False
 
     # Look for an autopsy radio button
@@ -1268,7 +1266,7 @@ def mortician_autopsy():
             return False
 
     # Set a cooldown if no autopsy found
-    cooldown = random.uniform(60, 80)
+    cooldown = random.uniform(31, 60)
     print(f"No autopsy available. Setting case cooldown for {cooldown:.2f}s.")
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=cooldown)
     return False

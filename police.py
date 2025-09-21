@@ -448,21 +448,11 @@ def collect_evidence():
         print("FAILED: Could not read case contents for evidence check.")
         return False
 
-    # For Torches, only do Fire Investigations if DNA & Fingerprint tests are completed AND results are "None"
+    # for Torches, do Fire Investigations only when the section exists and says 'None'
     if _is_torch() and "Fire Investigation:" in h and "None" in h:
-        fp_value = (_get_case_cell("Fingerprint Evidence:") or "").strip().lower()
-        dna_value = (_get_case_cell("DNA Log:") or "").strip().lower()
-
-        # Neither contains numbers or suspect names (i.e., results are "none")
-        fp_done_and_none = bool(fp_value) and fp_value == "none"
-        dna_done_and_none = bool(dna_value) and dna_value == "none"
-
-        if fp_done_and_none and dna_done_and_none:
-            print("FIRE INVESTIGATION REQUIRED (DNA & fingerprints both completed and returned None)")
-            _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]")  # Fire investigation
-            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-        else:
-            print("Skipping Fire Investigation – fingerprint/DNA not yet completed or not None.")
+        print("FIRE INVESTIGATION REQUIRED")
+        _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]")  # Fire investigation
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
     # Fingerprints — only dust if the value cell is blank
     fp_value = _get_case_cell("Fingerprint Evidence:")
@@ -543,7 +533,7 @@ def collect_evidence():
         went_to_records_db = True
     else:
         if fp_value:
-            print(f"FingerPrint cell not numeric ('{fp_value}'). Skipping Records database for FringerPrints.")
+            print(f"FingerPrint cell not numeric ('{fp_value}'). Skipping Records database for FingerPrints.")
 
     # Only navigate back to In-tray if we actually went to Records Database
     if went_to_records_db:
@@ -700,18 +690,14 @@ def solve_case(character_name):
         return True
 
     # If awaiting fire investigation results, return the case
-    # Only treat as "pending" if Fire has actually been requested (i.e., not blank/none)
     if _is_torch():
         fire_cell = _get_case_cell("Fire Investigation:")
         fire_text = (fire_cell or "").strip().lower()
-        fire_requested = bool(fire_text) and fire_text != "none"
-
-        if fire_requested and ("identity" not in fire_text):
+        # treat as pending if: blank, "none", or doesn't include the word "identity"
+        if not fire_text or fire_text == "none" or ("identity" not in fire_text):
             print("Fire Investigation pending - Return case.")
             _return_case()
             return True
-        elif not fire_requested:
-            print("Torch case – Fire Investigation not requested yet (waiting for FP/DNA results).")
 
     # Parse cues AFTER evidence work
     cues = _parse_case_for_signals()
@@ -766,7 +752,6 @@ def solve_case(character_name):
                     print("Suspect is dead per banner – burying case.")
                     _bury_case()
                     return True
-
                 elif fail_box and "you can't use staff" in fail_box.get_attribute("innerText").lower():
                     print("Suspect is an admin/staff account – burying case.")
                     _bury_case()

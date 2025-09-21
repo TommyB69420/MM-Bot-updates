@@ -185,8 +185,8 @@ force_reselect_earn = False
 DRIVER_LOCK = threading.RLock()
 
 # Discord-triggered smuggle state
-_smuggle_request_active = threading.Event()   # Set by Discord; consumed by Main loop
-_smuggle_request_target = None               # String: player name requested from Discord
+_smuggle_request_active = threading.Event()     # Set by Discord; consumed by Main loop
+_smuggle_request_target = None                  # String: player name requested from Discord
 
 # Global variables to store hacked player and amount for repayment
 hacked_player_for_repay = None

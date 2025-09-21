@@ -1,4 +1,6 @@
 import json
+import sys
+
 import requests
 import math
 import re
@@ -503,6 +505,22 @@ def process_unread_journal_entries(player_data):
                             entry_content = label_element.text.strip()
 
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
+
+                        # MHS warning - Send discord notification, logout and stop script
+                        if "you go about your usual" in entry_content.lower():
+                            try:
+                                send_discord_notification("MHS WARNING: Detected journal line 'As you go about your usual' — logging out and stopping script.")
+                            except Exception:
+                                pass
+                            # Attempt logout, then exit the script
+                            try:
+                                _find_and_click(By.XPATH, "//a[normalize-space()='LOG OUT']", pause=global_vars.ACTION_PAUSE_SECONDS)
+                                time.sleep(0.3)
+                            except Exception as e:
+                                print(f"Logout click failed or not visible: {e}")
+                            finally:
+                                print("Exiting script due to MHS Warning.")
+                                sys.exit(0)
 
                         # Flu check
                         if "you have a slightly nauseous feeling in your" in entry_content.lower():

@@ -8,6 +8,7 @@ import time, random
 import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
 from misc_functions import execute_sendmoney_to_player, complete_script_check, execute_travel_to_city
+from timer_functions import get_all_active_game_timers
 
 # ----- Config loading -----
 cfg = configparser.ConfigParser()
@@ -28,6 +29,40 @@ FROM_PATTERN = re.compile(r"In-Game Message from\s+(.+?)\s+at\b", re.IGNORECASE)
 
 # Work queue and worker thread
 work_queue: Queue = Queue()
+
+def execute_send_timers_snapshot() -> bool:
+    """
+    Fetch timers live and send only those that are actively counting down (>0s).
+    """
+    try:
+        timers = get_all_active_game_timers()
+    except Exception as e:
+        send_discord_notification(f"Failed to read timers: {e}")
+        return False
+
+    ticking = []
+    for key, sec in timers.items():
+        try:
+            if sec and sec > 0 and sec != float("inf"):
+                # format h:mm:ss
+                s = int(round(sec))
+                h, rem = divmod(s, 3600)
+                m, s = divmod(rem, 60)
+                ticking.append((key, f"{h:d}:{m:02d}:{s:02d}"))
+        except Exception:
+            continue
+
+    if not ticking:
+        send_discord_notification("**Timers snapshot**\n_All enabled timers are Ready._")
+        return True
+
+    # Sort longest first
+    ticking.sort(key=lambda kv: kv[0])
+    lines = [f"{k:28} : {v}" for k, v in ticking]
+    body = "**Timers snapshot**\n```\n" + "\n".join(lines) + "\n```"
+    send_discord_notification(body)
+    return True
+
 
 def worker():
     print("[DiscordBridge] Worker thread started.")
@@ -60,6 +95,9 @@ def worker():
                     ok = execute_sendmoney_to_player(job["target"], job["amount"])
                     print(f"[DiscordBridge] sendmoney -> {job['target']} ${job['amount']} | {'OK' if ok else 'FAILED'}")
 
+                elif action == "timers":
+                    ok = execute_send_timers_snapshot()
+                    print(f"[DiscordBridge] timers snapshot | {'OK' if ok else 'FAILED'}")
 
                 elif action == "travel":
                     # Pull the last known city from globals (set by the main loop). If empty, we skip the "already-in-city" check.
@@ -71,9 +109,9 @@ def worker():
                     )
                     print(f"[DiscordBridge] travel -> {job['target_city']} | {'OK' if ok else 'FAILED'}")
 
-                elif action == "script_check_submit":
+                elif action == "scriptcheck":
                     ok = complete_script_check(job["answer"])
-                    print(f"[DiscordBridge] script_check_submit -> '{job['answer']}' | {'OK' if ok else 'FAILED'}")
+                    print(f"[DiscordBridge] scriptcheck -> '{job['answer']}' | {'OK' if ok else 'FAILED'}")
                     # Discord ping on result
                     if ok:
                         send_discord_notification("Script check solved via Discord.")
@@ -134,7 +172,15 @@ async def on_message(message: discord.Message):
         await message.reply("pong")
         return
 
-    # :smuggle <Player>  OR  !smuggle <Player>
+    # !timers
+    if text.startswith(f"{CMD_PREFIX}timers"):
+        work_queue.put({"action": "timers"})
+        print(f"[DiscordBridge] Queued timers snapshot. Queue size: {work_queue.qsize()}")
+        await message.add_reaction("⏱️")
+        await message.reply("Queued a timers snapshot.")
+        return
+
+    # !smuggle <Player>
     if text.startswith(":smuggle") or text.startswith(f"{CMD_PREFIX}smuggle"):
         parts = text.split(maxsplit=1)
         if len(parts) < 2:
@@ -248,6 +294,7 @@ async def on_message(message: discord.Message):
             f"- `{CMD_PREFIX}sendmoney <player> <amount>`\n"
             f"- `{CMD_PREFIX}travel <City>` — Allowed: {allowed}\n"
             f"- `{CMD_PREFIX}scriptcheck <answer>`\n"
+            f"- `{CMD_PREFIX}timers`\n"
             f"- `{CMD_PREFIX}ping`"
         )
         return

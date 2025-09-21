@@ -207,7 +207,7 @@ def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     "do_blind_eye_enabled": ('customs' in (occupation or '').lower()) and location == home_city and blind_eye_queue_count() > 0,
     "do_funeral_smuggle_enabled": getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set() and funeral_smuggle_queue_count() > 0,
     "do_auto_promo_enabled": (config.getboolean('Misc', 'TakePromo', fallback=True) and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor", "Commissioner"}
-    and rank not in {"Commissioner-General"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
+    and rank not in {"Commissioner-General", "Caporegime"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
     }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs):
@@ -675,7 +675,7 @@ while True:
         # Drug manufacturing logic
         if enabled_configs.get ('do_manufacture_drugs_enabled') and action_time_remaining <= 0:
             print(f"Manufacture Drugs timer ({action_time_remaining:.2f}s) is ready. Attempting manufacture.")
-            if manufacture_drugs(initial_player_data):
+            if manufacture_drugs():
                 action_performed_in_cycle = True
             else:
                 print("Manufacture Drugs logic did not perform an action or failed. Setting fallback cooldown.")
