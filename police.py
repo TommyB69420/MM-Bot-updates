@@ -233,7 +233,7 @@ def prepare_police_cases(character_name):
             global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
             return True
 
-    # Helpers (function-scope, not inside the loop)
+    # Helpers
     def _cell_bg(td):
         style = (td.get_attribute("style") or "").lower()
         m = re.search(r"background(?:-color)?:\s*([^;]+)", style)
