@@ -206,8 +206,8 @@ def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients',fallback=False) and location == home_city and occupation in ("Bank Teller", "Loan Officer", "Bank Manager"),
     "do_blind_eye_enabled": ('customs' in (occupation or '').lower()) and location == home_city and blind_eye_queue_count() > 0,
     "do_funeral_smuggle_enabled": getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set() and funeral_smuggle_queue_count() > 0,
-    "do_auto_promo_enabled": (config.getboolean('Misc', 'TakePromo', fallback=True) and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor", "Commissioner"}
-    and rank not in {"Commissioner-General", "Caporegime"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
+    "do_auto_promo_enabled": (config.getboolean('Misc', 'TakePromo', fallback=True) and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor"}
+    and rank not in {"Commissioner-General", "Caporegime", "Commissioner"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
     }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs):
