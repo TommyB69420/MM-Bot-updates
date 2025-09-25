@@ -12,7 +12,7 @@ from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_
 from timer_functions import parse_game_datetime
 
 
-def schedule_next_911_check(min_m: float = 20, max_m: float = 25, ret: bool = False):
+def schedule_next_911_check(min_m: float = 7, max_m: float = 10, ret: bool = False):
     next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_m, max_m))
     _set_last_timestamp(global_vars.POLICE_911_NEXT_POST_FILE, next_check)
     global_vars._script_post_911_cooldown_end_time = next_check
@@ -551,7 +551,8 @@ def _choose_name_ending(cues):
     candidates = [c for c in candidates if c]
     return max(candidates, key=len) if candidates else None
 
-def _search_phonebook_by_ending(ending, crime_time_str: str | None = None):
+def _search_phonebook_by_ending(ending, crime_time_str: str | None = None, require_gangster: bool = False):
+
     """
     Search the Phone Book page and return (alive_matches, dead_matches) for names that END with `ending`.
     If `crime_time_str` is provided and there are multiple alive matches, open each profile and keep only
@@ -596,46 +597,84 @@ def _search_phonebook_by_ending(ending, crime_time_str: str | None = None):
                 pass
 
         # If we have multiple alive matches AND a crime time, narrow by 'Last online'
-        if crime_time_str and len(alive) > 1:
-            crime_dt = parse_game_datetime(crime_time_str)
-            if crime_dt:
-                print(f"Narrowing {len(alive)} alive matches by Last online > Time of Crime ({crime_time_str})")
-                filtered = []
-                for name in alive:
-                    # open the profile link from the results
-                    if _find_and_click(By.XPATH, f"//a[contains(@href, 'username={name}')]"):
-                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-                        # Read Last online or Last activity (handles both labels)
+        # Optionally filter ALIVE matches by Occupation: Gangster, and (if provided) by Last online > Time of Crime
+        if alive:
+            print(f"Alive matches before filters: {alive}")
+            crime_dt = parse_game_datetime(crime_time_str) if crime_time_str else None
+            filtered_alive = []
+            for name in alive:
+                if _find_and_click(By.XPATH, f"//a[contains(@href, 'username={name}')]"):
+                    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+                    # If torch mode wants gangsters only, enforce it
+                    if require_gangster:
+                        if not _profile_is_gangster():
+                            print(f"Excluding {name}: Occupation is not Gangster.")
+                            # return to results and continue
+                            try:
+                                global_vars.driver.back()
+                                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                            except Exception:
+                                pass
+                            continue
+
+                    # Optional “last online after crime” narrowing
+                    keep = True
+                    if crime_dt:
                         last_txt = _get_element_text(
                             By.XPATH,
                             "//td[@class='title' and (contains(normalize-space(),'Last online') or contains(normalize-space(),'Last activity'))]"
                             "/following-sibling::td[1]"
                         ) or ""
-
-                        # If it says "minute" (e.g., "less than a minute ago", "5 minutes ago"), treat as online now (i.e., clearly AFTER the crime time).
-                        text_lower = last_txt.lower()
-                        if "minute" in text_lower:
+                        lower_txt = last_txt.lower()
+                        if "minute" in lower_txt:
                             last_dt = datetime.datetime.now()
                         else:
                             last_dt = parse_game_datetime(last_txt)
+                        if not (last_dt and last_dt > crime_dt):
+                            print(f"Excluding {name}: Last online {last_txt or 'unreadable'} not after Time of Crime.")
+                            keep = False
 
-                        if last_dt and last_dt > crime_dt:
-                            filtered.append(name)
-                            print(f"Keeping {name} (Last online {last_txt})")
-                        else:
-                            print(f"Excluding {name} (Last online {last_txt or 'unreadable'})")
+                    if keep:
+                        print(f"Keeping {name}{' (Gangster)' if require_gangster else ''}.")
+                        filtered_alive.append(name)
 
-                        # go back to the search results and continue
-                        try:
-                            global_vars.driver.back()
-                            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-                        except Exception:
-                            pass
+                    # return to results
+                    try:
+                        global_vars.driver.back()
+                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    except Exception:
+                        pass
+                else:
+                    # Fail-safe: if we couldn't open the profile, only keep it when gangster isn't required
+                    if not require_gangster:
+                        print(f"Could not open profile for {name}; keeping as candidate (gangster not required).")
+                        filtered_alive.append(name)
+
+            alive = filtered_alive
+            print(f"Alive matches after filters: {alive}")
+
+        # If torch requires gangsters and there's no alive gangster, try DEAD list but filter to gangsters too
+        if require_gangster and alive == [] and dead:
+            print("No alive gangsters matched; checking obituary entries for gangsters…")
+            filtered_dead = []
+            for name in dead:
+                if _find_and_click(By.XPATH, f"//a[contains(@href, 'username={name}')]"):
+                    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    if _profile_is_gangster():
+                        filtered_dead.append(name)
+                        print(f"Dead gangster candidate: {name}")
                     else:
-                        # Couldn't open profile — keep as candidate (fail-safe)
-                        print(f"Could not open profile for {name}; keeping as candidate.")
-                        filtered.append(name)
-                alive = filtered
+                        print(f"Excluding dead {name}: Occupation is not Gangster.")
+                    try:
+                        global_vars.driver.back()
+                        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                    except Exception:
+                        pass
+                else:
+                    print(f"Could not open profile for dead {name}; skipping.")
+            dead = filtered_dead
+            print(f"Dead matches after gangster filter: {dead}")
 
         # back to Police
         _find_and_click(By.XPATH, "//span[@class='police']")
@@ -671,6 +710,7 @@ def solve_case(character_name):
     Conservative: if ambiguous → return/bury; do not guess.
     """
     print("\n--- Solving Case ---")
+    print("Checking case type and evidence.")
 
     if _is_witness_only_case():
         print("WITNESS-ONLY CASE: burying.")
@@ -681,6 +721,7 @@ def solve_case(character_name):
     if not collect_evidence():
         print("Evidence pending (e.g., DNA). Will try again later.")
         return False
+    print("Evidence collection complete — moving to suspect resolution.")
 
     # If DNA shows 'awaiting results', return case for hospital processing
     dna_status = _get_case_cell("DNA Log:")
@@ -689,12 +730,34 @@ def solve_case(character_name):
         _return_case()
         return True
 
-    # If awaiting fire investigation results, return the case
+    # If awaiting fire investigation results, request it only if FP & DNA both returned None
     if _is_torch():
-        fire_cell = _get_case_cell("Fire Investigation:")
-        fire_text = (fire_cell or "").strip().lower()
-        # treat as pending if: blank, "none", or doesn't include the word "identity"
-        if not fire_text or fire_text == "none" or ("identity" not in fire_text):
+        fire_text = (_get_case_cell("Fire Investigation:") or "").strip().lower()
+        fp_text = (_get_case_cell("Fingerprint Evidence:") or "").strip().lower()
+        dna_text = (_get_case_cell("DNA Log:") or "").strip().lower()
+
+        fire_not_requested = (not fire_text) or (fire_text == "none")
+        fp_none = (fp_text == "none") or (fp_text == "")
+        dna_none = (dna_text == "none") or (dna_text == "")
+
+        if fire_not_requested:
+            if fp_none and dna_none:
+                print("Torch: FP & DNA are None and Fire not requested — requesting Fire now.")
+                if _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[5]"):
+                    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                else:
+                    print("FAILED: Could not click 'Request fire investigation'.")
+                # After requesting, return to let results process
+                _return_case()
+                return True
+            else:
+                # Old behavior: if Fire isn't requested yet but we're missing/awaiting other evidence, just return
+                print("Fire Investigation pending - Return case.")
+                _return_case()
+                return True
+
+        # Fire was requested; if no identity yet, it’s still pending so return the case
+        if "identity" not in fire_text:
             print("Fire Investigation pending - Return case.")
             _return_case()
             return True
@@ -705,6 +768,7 @@ def solve_case(character_name):
         print("Could not parse the case – returning for safety.")
         _return_case()
         return False
+    print("Finished checking case for evidence.")
 
     # If fingerprints list multiple suspects (comma-separated), bury the case.
     fp_txt = (cues.get("fingerprint") or "").strip()
@@ -715,6 +779,8 @@ def solve_case(character_name):
 
 
     suspect = cues.get("suspect")
+    if suspect:
+        print(f"Suspect determined from cues: {suspect}")
 
     # If still no suspect, and there are no leads at all, bury instead of return
     if not suspect:
@@ -866,13 +932,23 @@ def solve_case(character_name):
 
         if ending:
             crime_time = _get_case_cell("Time of Crime:")
-            alive_matches, dead_matches = _search_phonebook_by_ending(ending, crime_time)
-            print(f"PHONEBOOK ALIVE MATCHES ({ending}): {alive_matches}")
-            print(f"PHONEBOOK OBITUARY MATCHES ({ending}): {dead_matches}")
+            torch_mode = _is_torch()
+            alive_matches, dead_matches = _search_phonebook_by_ending(
+                ending,
+                crime_time,
+                require_gangster=torch_mode  # Only gangsters can torch
+            )
+            print(f"PHONEBOOK ALIVE MATCHES ({ending}){' [GANGSTER-ONLY]' if torch_mode else ''}: {alive_matches}")
+            print(f"PHONEBOOK OBITUARY MATCHES ({ending}){' [GANGSTER-ONLY]' if torch_mode else ''}: {dead_matches}")
+
+            if torch_mode and not alive_matches and dead_matches:
+                print("Torch: No alive gangsters found; considering dead gangsters from Obituary.")
+
 
             # Prefer alive matches first
             if len(alive_matches) == 1:
                 suspect = alive_matches[0]
+                print(f"Suspect obtained from phonebook: {suspect}")
             elif len(alive_matches) > 1 and cues.get("fingerprint"):
                 fp = cues["fingerprint"]
                 narrowed = [m for m in alive_matches if fp in m]
@@ -890,6 +966,7 @@ def solve_case(character_name):
                     return True
                 elif len(dead_matches) == 1:
                     suspect = dead_matches[0]
+                    print(f"Suspect resolved from obituary: {suspect}")
 
     if not suspect:
         # Try 911 cache before giving up
@@ -911,7 +988,7 @@ def solve_case(character_name):
             print("No decisive suspect and forensics already done – BURY.")
             _bury_case()
             return True
-        print("No decisive suspect – RETURN case.")
+        print("No decisive suspect found after evidence, 911 and phonebook checks — RETURN case.")
         _return_case()
         return True
 
@@ -945,7 +1022,7 @@ def solve_case(character_name):
         _bury_case()
         return True
 
-    print("Case closed successfully.")
+    print(f"Case closed successfully on suspect {suspect}.")
     return True
 
 def _parse_case_for_signals():
@@ -1140,6 +1217,25 @@ def _get_case_cell(label_text: str) -> str:
     val = re.sub(r"<[^>]+>", "", m.group(1))
     return val.strip()
 
+def _read_profile_cell(label_fragment: str) -> str:
+    """
+    On a player's profile, read the value cell that follows a title cell
+    containing label_fragment (case-insensitive).
+    """
+    return _get_element_text(
+        By.XPATH,
+        f"//td[@class='title' and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "
+        f"'{label_fragment.lower()}')]/following-sibling::td[1]"
+    ) or ""
+
+def _profile_is_gangster() -> bool:
+    """
+    Returns True if the currently open profile shows Occupation: Gangster.
+    """
+    occ = (_read_profile_cell("occupation") or "").strip().lower()
+    return occ == "gangster"
+
+
 def _records_database_add_if_results(kind: str) -> bool:
     """
     From an open case, jump to 'Records database' and add results if available.
@@ -1286,6 +1382,7 @@ def _try_infer_suspect_from_911(cues) -> str | None:
     Return a single username, or None if ambiguous/not found.
     """
     try:
+        print("Attempting 911 cache check…")
         # prefer values already parsed from the case body
         time_of_crime = (cues or {}).get("agg_time") or _get_case_cell("Time of Crime:")
         victim = (cues or {}).get("victim") or _get_case_cell("Victim:")
@@ -1303,15 +1400,19 @@ def _try_infer_suspect_from_911(cues) -> str | None:
         for r in rows:
             if (r.get("time") == time_of_crime) and (r.get("victim", "").lower() == victim.lower()):
                 suffix = (r.get("suspect") or "").strip()
-                if len(suffix) < 2:
-                    print(f"911 match found but suspect suffix too short ('{suffix}')")
+                if not suffix:
+                    print("911 match found but suspect suffix is empty")
                     return None
+
+                if len(suffix) == 1:
+                    print(f"911 suffix is only 1 letter ('{suffix}') — proceeding cautiously…")
 
                 # online_users is stored as a single comma-separated string in the cache
                 online_raw = r.get("online_users", "") or ""
                 users = [u.strip() for u in re.split(r"[,]+", online_raw) if u.strip()]
 
-                candidates = [u for u in users if u.endswith(suffix)]
+                sfx = suffix.lower()
+                candidates = [u for u in users if u.lower().endswith(sfx)]
                 print(f"911 MATCH: {time_of_crime} | {victim} → suffix '{suffix}' → candidates: {candidates}")
 
                 if len(candidates) == 1:
@@ -1320,6 +1421,7 @@ def _try_infer_suspect_from_911(cues) -> str | None:
                 # ambiguous or none → don’t guess
                 return None
 
+        print(f"911 cache check complete — no matching entries found for Victim={victim}, Time={time_of_crime}.")
         return None
     except Exception as e:
         print(f"911 cache check failed: {e}")

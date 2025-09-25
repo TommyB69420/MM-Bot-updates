@@ -1144,17 +1144,15 @@ def _perform_torch_attempt(player_data):
 
     elif "recently survived" in result_text or "not yet repaired" in result_text:
         print(f"Business '{selected_business_name}' recently torched or not repaired. This will trigger a short re-check cooldown.")
-        log_aggravated_event("Torch", selected_business_name, "Target Cooldown (No Repair/Recent Torching)", 0)
         global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(1, 3))
         global_vars.torch_successful = False
-        return True
+        return False
 
     elif "That business is your own" in result_text:
         print(f"Attempted to torch own business: {selected_business_name}. Setting long cooldown for this target.")
-        log_aggravated_event("Torch", selected_business_name, "Own Business", 0)
         global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(days=1)
         global_vars.torch_successful = False
-        return True
+        return False
 
     # Failed too many
     elif "as you have failed too many" in result_text:

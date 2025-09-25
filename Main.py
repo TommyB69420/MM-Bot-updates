@@ -2,7 +2,6 @@ import datetime
 import random
 import time
 import sys
-from selenium.common import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 import global_vars
 from discord_bridge import start_discord_bridge
@@ -10,7 +9,7 @@ from agg_crimes import execute_aggravated_crime_logic, execute_yellow_pages_scan
 from earn_functions import execute_earns_logic, diligent_worker
 from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
     manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
-    customs_blind_eyes, execute_smuggle_for_player, mortician_autopsy
+    customs_blind_eyes, execute_smuggle_for_player, mortician_autopsy, community_service_foreign
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
     blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
 from database_functions import init_local_db
@@ -174,6 +173,7 @@ def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     "do_earns_enabled": config.getboolean('Earns Settings', 'DoEarns', fallback=True),
     "do_diligent_worker_enabled": config.getboolean('Earns Settings', 'UseDilly', fallback=False),
     "do_community_services_enabled": config.getboolean('Actions Settings', 'CommunityService', fallback=False),
+    "do_foreign_community_services_enabled": config.getboolean('Actions Settings', 'ForeignCommunityService', fallback=False) and location != home_city,
     "mins_between_aggs": config.getint('Misc', 'MinsBetweenAggs', fallback=30),
     "do_hack_enabled": config.getboolean('Hack', 'DoHack', fallback=False),
     "do_pickpocket_enabled": config.getboolean('PickPocket', 'DoPickPocket', fallback=False),
@@ -249,6 +249,8 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
         active.append(('Diligent Worker', skill))
     if enabled_configs.get('do_community_services_enabled'):
         active.append(('Community Service', action))
+    if enabled_configs.get('do_foreign_community_services_enabled'):
+        active.append(('Foreign Community Service', action))
     if enabled_configs.get('do_university_degrees_enabled'):
         active.append(('Study Degree', action))
     if enabled_configs.get('do_manufacture_drugs_enabled'):
@@ -621,6 +623,14 @@ while True:
                 action_performed_in_cycle = True
             else:
                 print("Community Service logic did not perform an action or failed. Setting fallback cooldown.")
+
+        # Foreign Community Service Logic
+        if enabled_configs.get ('do_foreign_community_services_enabled') and action_time_remaining <= 0:
+            print(f"Foreign Community Service timer ({action_time_remaining:.2f}s) is ready. Attempting Foreign CS.")
+            if community_service_foreign(initial_player_data):
+                action_performed_in_cycle = True
+            else:
+                print("Foreign Community Service logic did not perform an action or failed. Setting fallback cooldown.")
 
         if perform_critical_checks(character_name):
             continue

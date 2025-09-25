@@ -5,8 +5,12 @@ from queue import Queue, Empty
 import configparser
 import discord
 import time, random
+
+from selenium.webdriver.common.by import By
+
 import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
+from helper_functions import _find_and_click
 from misc_functions import execute_sendmoney_to_player, complete_script_check, execute_travel_to_city
 from timer_functions import get_all_active_game_timers
 
@@ -99,6 +103,10 @@ def worker():
                     ok = execute_send_timers_snapshot()
                     print(f"[DiscordBridge] timers snapshot | {'OK' if ok else 'FAILED'}")
 
+                elif action == "log out":
+                    ok = execute_logout()
+                    print(f"[DiscordBridge] logout requested | {'OK' if ok else 'FAILED'}")
+
                 elif action == "travel":
                     # Pull the last known city from globals (set by the main loop). If empty, we skip the "already-in-city" check.
                     current_city = getattr(global_vars, "LAST_KNOWN_CITY", "")
@@ -180,6 +188,14 @@ async def on_message(message: discord.Message):
         await message.reply("Queued a timers snapshot.")
         return
 
+    # !logout
+    if text.startswith(f"{CMD_PREFIX}log out"):
+        work_queue.put({"action": "log out"})
+        print(f"[DiscordBridge] Queued log out. Queue size: {work_queue.qsize()}")
+        await message.add_reaction("👋")
+        await message.reply("Logging out and stopping the script...")
+        return
+
     # !smuggle <Player>
     if text.startswith(":smuggle") or text.startswith(f"{CMD_PREFIX}smuggle"):
         parts = text.split(maxsplit=1)
@@ -212,14 +228,27 @@ async def on_message(message: discord.Message):
         if len(parts) < 2:
             # Build allowed set dynamically from global aliases
             aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
-            allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+            grouped = {}
+            for alias, city in aliases.items():
+                grouped.setdefault(city, []).append(alias)
+
+            parts_list = []
+            for city, alias_list in grouped.items():
+                extras = [a for a in alias_list if a.lower() != city.lower()]
+                if extras:
+                    parts_list.append(f"{city} ({', '.join(extras)})")
+                else:
+                    parts_list.append(city)
+
+            allowed = ", ".join(parts_list)
+
             await message.reply(f"Usage: `{CMD_PREFIX}travel <City>`\nAllowed: {allowed}")
             return
 
         key = parts[1].strip().lower()
         aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
         if key not in aliases:
-            allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+            allowed = ", ".join(sorted(set(list(aliases.keys()) + list(aliases.values())))) or "Unknown"
             await message.reply(f"City must be one of: {allowed}.")
             return
 
@@ -285,7 +314,19 @@ async def on_message(message: discord.Message):
     if text in {f"{CMD_PREFIX}help", f"{CMD_PREFIX}commands"}:
         # Build allowed city list dynamically from globals
         aliases = getattr(global_vars, "CITY_ALIASES", {}) or {}
-        allowed = ", ".join(sorted(set(aliases.values()))) or "Unknown"
+        grouped = {}
+        for alias, city in aliases.items():
+            grouped.setdefault(city, []).append(alias)
+
+        parts_list = []
+        for city, alias_list in grouped.items():
+            extras = [a for a in alias_list if a.lower() != city.lower()]
+            if extras:
+                parts_list.append(f"{city} ({', '.join(extras)})")
+            else:
+                parts_list.append(city)
+
+        allowed = ", ".join(parts_list)
 
         await message.reply(
             "Commands:\n"
@@ -295,6 +336,7 @@ async def on_message(message: discord.Message):
             f"- `{CMD_PREFIX}travel <City>` — Allowed: {allowed}\n"
             f"- `{CMD_PREFIX}scriptcheck <answer>`\n"
             f"- `{CMD_PREFIX}timers`\n"
+            f"- `{CMD_PREFIX}log out`\n"
             f"- `{CMD_PREFIX}ping`"
         )
         return
@@ -312,3 +354,18 @@ def start_discord_bridge():
 
 if __name__ == "__main__":
     start_discord_bridge()
+
+def execute_logout():
+    """Click the log out button, message discord and stop the script."""
+    try:
+        ok = _find_and_click(By.XPATH, "//a[normalize-space()='LOG OUT']")
+        if ok:
+            send_discord_notification("Bot logged out and stopped via Discord command.")
+            print("[DiscordBridge] Logout successful. Exiting script...")
+            os._exit(0)  # Hard exit
+        else:
+            send_discord_notification("Logout command failed - could not find button.")
+        return ok
+    except Exception as e:
+        send_discord_notification(f"Logout failed: {e}")
+        return False

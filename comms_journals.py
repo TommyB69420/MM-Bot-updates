@@ -74,7 +74,6 @@ def start_new_conversation(target: str, body: str, timeout: int = 12) -> bool:
         print(f"[COMMS] start_new_conversation failed for '{target}': {e}")
         return False
 
-
 def send_discord_notification(message):
     """Sends a message to the configured Discord webhook, reading URL from settings.ini."""
 
@@ -415,7 +414,6 @@ def _process_requests_offers_entries():
             continue
 
     return processed_any_request
-
 
 def process_unread_journal_entries(player_data):
     """
@@ -771,6 +769,7 @@ def drug_offers(initial_player_data: dict):
         'cocaine': 'Cocaine',
         'ecstasy': 'Ecstasy',
         'heroin': 'Heroin',
+        'acid': 'Acid',
     }
     drug_name = name_map.get(drug_key, drug_key.title())
 

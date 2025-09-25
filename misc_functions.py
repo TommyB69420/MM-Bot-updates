@@ -144,7 +144,6 @@ def execute_travel_to_city(target_city: str, current_city: str, discord_user_id:
         except Exception:
             print("[TRAVEL] WARNING: Could not return to previous page after travel.")
 
-
 def study_degrees():
     """
     Manages the process of studying university degrees.
@@ -307,7 +306,6 @@ def withdraw_money(amount: int):
                 time.sleep(global_vars.ACTION_PAUSE_SECONDS)
         except Exception:
             print("WARNING: Could not return to previous page after withdrawal.")
-
 
 def transfer_money(amount, recipient):
     """
@@ -1354,7 +1352,6 @@ def map_promo_choice(promo_name: str):
             return choice
     return None
 
-
 def take_promotion():
     """
     Automatically checks and takes promotions:
@@ -1708,7 +1705,6 @@ def casino_slots():
         spins += 1
         if spins % 10 == 0:
             print(f"Spins so far: {spins}")
-
 
 def complete_script_check(answer: str) -> bool:
     """Type the given answer into the ADMIN script-check input and submit it.

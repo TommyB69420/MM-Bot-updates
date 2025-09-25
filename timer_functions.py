@@ -285,6 +285,11 @@ def get_all_active_game_timers():
     if script_community_service_remaining > 0:
         timers['action_time_remaining'] = max(timers.get('action_time_remaining', 0), script_community_service_remaining)
 
+    # Foreign Community Service Cooldown
+    script_foreign_community_service_remaining = (global_vars._script_action_cooldown_end_time - current_time).total_seconds()
+    if script_foreign_community_service_remaining > 0:
+        timers['action_time_remaining'] = max(timers.get('action_time_remaining', 0), script_foreign_community_service_remaining)
+
     # Diligent Worker Cooldown
     script_diligent_worker_remaining = (global_vars._script_skill_cooldown_end_time - current_time).total_seconds()
     if script_diligent_worker_remaining > 0:
