@@ -23,6 +23,20 @@ NEW_CONVO_TO_XPATH   = "//*[@id='toname']"
 NEW_CONVO_BODY_XPATH = "//*[@id='holder_content']/form/table/tbody/tr[5]/td[2]/textarea"
 NEW_CONVO_SEND_XPATH = "//*[@id='holder_content']/form/p[2]/input"
 
+# ======================
+# Reply-to-sender helpers
+# ======================
+
+# Comms button to open the list page
+COMMS_BUTTON_XPATH = "//span[@id='comms_span_id']"
+
+# Sender inside an OPEN conversation (header area)
+CONVO_SENDER_XPATH = ".//*[@id='conversation_holder']/div[1]/table/tbody/tr/td/div[1]/div[1]/div/a[2]"
+
+# Reply box + Send Reply button (inside an OPEN conversation)
+REPLY_BOX_XPATH = "//*[@id='holder_content']/p[1]/textarea"
+SEND_BTN_XPATH = "//*[@id='holder_content']/p[2]/input"
+
 def start_new_conversation(target: str, body: str, timeout: int = 12) -> bool:
     """
     Opens a brand-new conversation to `target` and sends `body`.
@@ -504,22 +518,6 @@ def process_unread_journal_entries(player_data):
 
                         print(f"Processing NEW Journal Entry - Title: '{entry_title}', Time: '{entry_time}'")
 
-                        # MHS warning - Send discord notification, logout and stop script
-                        if "you go about your usual" in entry_content.lower():
-                            try:
-                                send_discord_notification("MHS WARNING: Detected journal line 'As you go about your usual' — logging out and stopping script.")
-                            except Exception:
-                                pass
-                            # Attempt logout, then exit the script
-                            try:
-                                _find_and_click(By.XPATH, "//a[normalize-space()='LOG OUT']", pause=global_vars.ACTION_PAUSE_SECONDS)
-                                time.sleep(0.3)
-                            except Exception as e:
-                                print(f"Logout click failed or not visible: {e}")
-                            finally:
-                                print("Exiting script due to MHS Warning.")
-                                sys.exit(0)
-
                         # Flu check
                         if "you have a slightly nauseous feeling in your" in entry_content.lower():
                             if check_into_hospital_for_surgery():
@@ -537,6 +535,31 @@ def process_unread_journal_entries(player_data):
                                 time.sleep(0.2)
                                 continue
 
+                        # Whack warning - send the full journal entry to Discord
+                        if "health" in entry_content.lower():
+                            try:
+                                full_discord_message = f"New Journal Entry - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}"
+                                send_discord_notification(full_discord_message)
+                                print(f"Sent journal entry to Discord due to whack match: '{entry_title}'.")
+                            except Exception as e:
+                                print(f"Failed to send whack journal entry to Discord: {e}")
+
+                        # MHS warning - Send discord notification, logout and stop script
+                        if "you go about your usual" in entry_content.lower():
+                            try:
+                                send_discord_notification("MHS WARNING: Detected journal line 'As you go about your usual' — logging out and stopping script.")
+                            except Exception:
+                                pass
+                            # Attempt logout, then exit the script
+                            try:
+                                _find_and_click(By.XPATH, "//a[normalize-space()='LOG OUT']", pause=global_vars.ACTION_PAUSE_SECONDS)
+                                time.sleep(0.3)
+                            except Exception as e:
+                                print(f"Logout click failed or not visible: {e}")
+                            finally:
+                                print("Exiting script due to MHS Warning.")
+                                sys.exit(0)
+
                         # If BnE Witness record apartment type in aggravated_crime_cooldown.json
                         if "get broken into" in entry_content.lower() and "you witnessed" in entry_content.lower():
                             if _record_bne_witness_apartment(entry_content):
@@ -551,8 +574,7 @@ def process_unread_journal_entries(player_data):
                             send_discord_notification(full_discord_message)
                             print(f"Sent journal entry to Discord: '{entry_title}' (matched send list).")
                         else:
-                            print(
-                                f"Skipping journal entry: '{entry_title}' as it does not match any specified send filters.")
+                            print(f"Skipping journal entry: '{entry_title}' as it does not match any specified send filters.")
 
                         processed_any_new = True
                         i += 2  # skip marker + content rows
@@ -894,21 +916,6 @@ def drug_offers(initial_player_data: dict):
         _back_to_journal()
         return True
 
-
-# ======================
-# Reply-to-sender helpers
-# ======================
-
-# Comms button to open the list page
-COMMS_BUTTON_XPATH = "//span[@id='comms_span_id']"
-
-# Sender inside an OPEN conversation (header area)
-CONVO_SENDER_XPATH = ".//*[@id='conversation_holder']/div[1]/table/tbody/tr/td/div[1]/div[1]/div/a[2]"
-
-# Reply box + Send Reply button (inside an OPEN conversation)
-REPLY_BOX_XPATH = "//*[@id='holder_content']/p[1]/textarea"
-SEND_BTN_XPATH = "//*[@id='holder_content']/p[2]/input"
-
 def find_and_open_thread_on_list(target_name: str, max_threads: int = 50) -> bool:
     """
     On the message page, loop visible thread blocks, read each block's text,
@@ -1081,7 +1088,6 @@ def reply_to_sender(target: str, body: str) -> bool:
     except Exception as e:
         print(f"[COMMS] reply_to_sender fatal error for '{target}': {e}")
         return False
-
 
 def _clean_amount(amount_str: str) -> int | None:
     """

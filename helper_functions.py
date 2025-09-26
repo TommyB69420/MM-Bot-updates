@@ -26,7 +26,6 @@ def _find_element(by_type, value, timeout=EXPLICIT_WAIT_SECONDS, suppress_loggin
         print(f"An error occurred while finding element {by_type}: {value} - {e}")
         return None
 
-
 def _get_current_url():
     """Gets the current URL using WebDriver."""
     try:
@@ -56,7 +55,6 @@ def _find_elements_quiet(by_type, value):
         return [elem for elem in elements if elem.is_displayed()]
     except Exception:
         return []
-
 
 def _find_and_click(by_type, value, timeout=EXPLICIT_WAIT_SECONDS, pause=ACTION_PAUSE_SECONDS):
     """Finds and clicks an element."""
@@ -88,7 +86,6 @@ def _find_and_send_keys(by_type, value, keys, timeout=EXPLICIT_WAIT_SECONDS, pau
             return False
     return False
 
-
 def _get_element_text(by_type, value, timeout=EXPLICIT_WAIT_SECONDS):
     """Gets text from an element with stale-safe retries."""
     attempts = 3
@@ -105,7 +102,6 @@ def _get_element_text(by_type, value, timeout=EXPLICIT_WAIT_SECONDS):
             print(f"An error occurred while reading text from {by_type}: {value} - {e}")
             return None
     return None
-
 
 def _get_element_text_quiet(by_type, value, timeout=0.2):
     """
@@ -171,7 +167,6 @@ def _navigate_to_page_via_menu(main_menu_xpath, sub_menu_xpath_or_text, page_nam
 
     print(f"Successfully navigated to {page_name}.")
     return True
-
 
 def _get_dropdown_options(by_type, value, timeout=EXPLICIT_WAIT_SECONDS):
     """
@@ -310,3 +305,19 @@ def funeral_smuggle_queue_count():
     q = _read_json_file(global_vars.FUNERAL_SMUGGLE_QUEUE_FILE) or []
     return len(q) if isinstance(q, list) else 0
 
+def _click_quick_xpath(by_type, value, suppress_exceptions=True):
+    """
+    Very fast click helper that does NOT use WebDriverWait.
+    Intended for tight spam loops where we want to hammer a button quickly.
+    Returns True on a successful click, False otherwise.
+    """
+    try:
+        el = driver.find_element(by_type, value)
+        if el and el.is_displayed():
+            el.click()
+            return True
+        return False
+    except Exception as e:
+        if not suppress_exceptions:
+            print(f"_click_quick_xpath error for {by_type}: {value} -> {e}")
+        return False

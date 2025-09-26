@@ -10,7 +10,8 @@ from selenium.webdriver.support import expected_conditions as EC
 import global_vars
 from comms_journals import send_discord_notification, _clean_amount
 from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text, \
-    _get_dropdown_options, _select_dropdown_option, _find_and_send_keys, _get_current_url, _get_element_text_quiet
+    _get_dropdown_options, _select_dropdown_option, _find_and_send_keys, _get_current_url, _get_element_text_quiet, \
+    _click_quick_xpath
 from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, _read_json_file, _write_json_file
 from timer_functions import get_all_active_game_timers
 
@@ -1194,8 +1195,8 @@ def combat_training():
         print("FAILED: Could not click final Submit on confirmation.")
         return False
 
-    print("Combat training submitted successfully — stopping now for manual review.")
-    raise SystemExit("Combat training submitted — manual review requested.")
+    print("Combat training sign-up complete — will continue next cycle.")
+    return True
 
 def fire_training():
     """
@@ -1354,23 +1355,49 @@ def map_promo_choice(promo_name: str):
 
 def take_promotion():
     """
-    Automatically checks and takes promotions:
-      - Reads [Misc] TakePromo in settings.ini
-      - Clicks the MMM logo to trigger promo
-      - If on Promotion page, picks mapped option and continues
-      - Notifies Discord
+    Automatically checks and takes promotions.
+      - Observes [Misc] TakePromo in settings.ini (existing)
+      - If [Misc] PromoSpam = True, spam-clicks the logo rapidly until a promotion appears (or 25 minutes elapsed).
+      - Once on a promotion page, proceed with existing mapped-choice handling.
     Returns True if a promotion was taken; False otherwise.
     """
-
     print("\n--- Promotion Check ---")
 
-    # Click the MM logo which triggers promo if one exists
-    if not _find_and_click(By.XPATH, "//*[@id='logo_hit']", pause=global_vars.ACTION_PAUSE_SECONDS):
-        print("Promo: Could not click logo.")
-        return False
+    # read the spam config (default False)
+    try:
+        promo_spam_enabled = global_vars.config.getboolean('Misc', 'PromoSpam', fallback=False)
+    except Exception:
+        promo_spam_enabled = False
 
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    # If promo-spam is enabled, aggressively click the logo repeatedly (fast)
+    if promo_spam_enabled:
+        print("PromoSpam enabled — spamming logo until promotion appears (max 25 minutes).")
+        start = time.monotonic()
+        max_seconds = 25 * 60  # 25 minutes
+        while (time.monotonic() - start) < max_seconds:
+            # Use the quick helper to avoid expensive waits
+            _click_quick_xpath(By.XPATH, "//*[@id='logo_hit']")
+            # small tiny pause — keep it aggressive but not insane
+            time.sleep(0.3)
 
+            curr_url = (_get_current_url() or "").lower()
+            if "promotion" in curr_url:
+                print("PromoSpam: promotion page detected — exiting spam loop.")
+                break
+        else:
+            # timeout: no promotion after max duration
+            print("PromoSpam: No promotion detected after 25 minutes. Backing off.")
+            global_vars._script_promo_check_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(2, 4))
+            return False
+
+    else:
+        # Not using spam — perform single click as before
+        if not _find_and_click(By.XPATH, "//*[@id='logo_hit']", pause=global_vars.ACTION_PAUSE_SECONDS):
+            print("Promo: Could not click logo.")
+            return False
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    # If we weren't in the spam branch (or after spam loop) ensure we're on promo page
     curr_url = (_get_current_url() or "").lower()
     if "promotion" not in curr_url:
         print("Promo: No promotion detected.")
@@ -1379,7 +1406,7 @@ def take_promotion():
 
     print("Promo page detected — parsing details...")
 
-    # Read promo header
+    # Read promo header (existing logic)
     header_el = _find_element(By.XPATH, "//*[@id='holder_top']/h1")
     promo_name = (header_el.text if header_el else "").strip()
     if not promo_name:

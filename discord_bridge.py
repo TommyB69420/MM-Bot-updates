@@ -11,7 +11,7 @@ from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
 from helper_functions import _find_and_click
-from misc_functions import execute_sendmoney_to_player, complete_script_check, execute_travel_to_city
+from misc_functions import execute_sendmoney_to_player, execute_travel_to_city
 from timer_functions import get_all_active_game_timers
 
 # ----- Config loading -----
@@ -117,19 +117,6 @@ def worker():
                     )
                     print(f"[DiscordBridge] travel -> {job['target_city']} | {'OK' if ok else 'FAILED'}")
 
-                elif action == "scriptcheck":
-                    ok = complete_script_check(job["answer"])
-                    print(f"[DiscordBridge] scriptcheck -> '{job['answer']}' | {'OK' if ok else 'FAILED'}")
-                    # Discord ping on result
-                    if ok:
-                        send_discord_notification("Script check solved via Discord.")
-                        try:
-                            setattr(global_vars, "_awaiting_script_solution", False)
-                        except Exception:
-                            pass
-                    else:
-                        send_discord_notification("Script check NOT solved. Manual intervention required.")
-
                 else:
                     print(f"[DiscordBridge][WARN] Unknown action: {action}")
             # --- END EXCLUSIVE SECTION ---
@@ -207,19 +194,6 @@ async def on_message(message: discord.Message):
         print(f"[DiscordBridge] Queued smuggle for '{target}'. Queue size: {work_queue.qsize()}")
         await message.add_reaction("📦")
         await message.reply(f"Queued smuggle for **{target}**.")
-        return
-
-    # !scriptcheck <Answer>
-    if text.startswith(f"{CMD_PREFIX}scriptcheck"):
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            await message.reply(f"Usage: `{CMD_PREFIX}scriptcheck <answer>`")
-            return
-        answer = parts[1].strip()
-        work_queue.put({"action": "script_check_submit", "answer": answer})
-        print(f"[DiscordBridge] Queued script_check_submit '{answer}'. Queue size: {work_queue.qsize()}")
-        await message.add_reaction("🧩")
-        await message.reply(f"Queued script-check answer: `{answer}`.")
         return
 
     # !travel <City>
@@ -334,7 +308,6 @@ async def on_message(message: discord.Message):
             f"- `{CMD_PREFIX}smuggle <player>`\n"
             f"- `{CMD_PREFIX}sendmoney <player> <amount>`\n"
             f"- `{CMD_PREFIX}travel <City>` — Allowed: {allowed}\n"
-            f"- `{CMD_PREFIX}scriptcheck <answer>`\n"
             f"- `{CMD_PREFIX}timers`\n"
             f"- `{CMD_PREFIX}log out`\n"
             f"- `{CMD_PREFIX}ping`"

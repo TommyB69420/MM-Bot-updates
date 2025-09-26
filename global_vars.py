@@ -104,14 +104,14 @@ except Exception as e:
 
 # --- Global Configurations ---
 EXPLICIT_WAIT_SECONDS = random.uniform(2, 3) # This is a wait for specific elements to appear, preventing TimeoutException when elements load dynamically.
-ACTION_PAUSE_SECONDS = random.uniform(0.4, 0.8) # This is an unconditional sleep between actions, primarily for pacing and simulating human interaction.
+ACTION_PAUSE_SECONDS = random.uniform(0.3, 0.4) # This is an unconditional sleep between actions, primarily for pacing and simulating human interaction.
 wait = WebDriverWait(driver, EXPLICIT_WAIT_SECONDS)
-MIN_POLLING_INTERVAL_LOWER = 40
-MIN_POLLING_INTERVAL_UPPER = 80
+MIN_POLLING_INTERVAL_LOWER = 30
+MIN_POLLING_INTERVAL_UPPER = 35
 startup_login_ping_sent = False # One time Discord ping on startup (guard)
 
 # --- Script Version ---
-SCRIPT_VERSION = "17-09-2025"
+SCRIPT_VERSION = "28-09-2025"
 
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'
