@@ -62,6 +62,12 @@ def police_911():
             crime = cols[1].text.strip()
             victim = cols[2].text.strip()
             suspect = cols[3].text.strip()
+
+            # Skip “escaped” suspects entirely (don’t post, don’t cache)
+            if re.search(r"\bescaped\b", suspect, flags=re.IGNORECASE):
+                print(f"Skipping 911 row with escaped suspect: {time} {crime} {victim} {suspect}")
+                continue
+
             table_data.append(f"{time} {crime} {victim} {suspect}")
             parsed_rows.append({"time": time, "crime": crime, "victim": victim, "suspect": suspect})
 
