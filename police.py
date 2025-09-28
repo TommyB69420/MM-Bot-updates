@@ -682,12 +682,20 @@ def _search_phonebook_by_ending(ending, crime_time_str: str | None = None, requi
             dead = filtered_dead
             print(f"Dead matches after gangster filter: {dead}")
 
-        # back to Police
-        global_vars.driver.execute_script("window.scrollTo(0,0);")
-        time.sleep(0.2)  # tiny pause so the button is definitely visible
+        # scroll back up to top of the page and navigate back to Police
+        try:
+            before_y = global_vars.driver.execute_script("return window.pageYOffset;")
+            global_vars.driver.execute_script("window.scrollTo(0,0);")
+            time.sleep(0.2)  # tiny pause so the button is definitely visible
+            after_y = global_vars.driver.execute_script("return window.pageYOffset;")
+            print(f"Scrolled to top (before={before_y}, after={after_y}).")
+        except Exception as e:
+            print(f"WARNING: Could not check/scroll window position: {e}")
+
         _find_and_click(By.XPATH, "//span[@class='police']")
-        print("Scrolled to top and navigated back to Police.")
+        print("Navigated back to Police.")
         return alive, dead
+
 
     except Exception as e:
         print(f"Phonebook search failed: {e}")
