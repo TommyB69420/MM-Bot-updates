@@ -107,7 +107,7 @@ def get_all_active_game_timers():
     # --- Phase 2: Calculate File-Based Timers & Aggravated Crime Cooldowns ---
 
     # Yellow Pages Scan Timer (Always enabled, 7-hour interval)
-    yellow_pages_scan_interval_hours = 7
+    yellow_pages_scan_interval_hours = 1
     last_yp_scan_time = _get_last_timestamp(global_vars.YELLOW_PAGES_LAST_SCAN_FILE)
     if last_yp_scan_time:
         remaining = int(yellow_pages_scan_interval_hours * 3600 - (current_time - last_yp_scan_time).total_seconds())
@@ -116,7 +116,7 @@ def get_all_active_game_timers():
         timers['yellow_pages_scan_time_remaining'] = 0  # If never scanned, scan immediately
 
     # Funeral Parlour Scan Timer (Always enabled, 8-hour interval)
-    funeral_parlour_scan_interval_hours = 8
+    funeral_parlour_scan_interval_hours = 2
     last_fp_scan_time = _get_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE)
     if last_fp_scan_time:
         remaining = int(funeral_parlour_scan_interval_hours * 3600 - (current_time - last_fp_scan_time).total_seconds())

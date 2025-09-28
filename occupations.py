@@ -1010,37 +1010,7 @@ def fire_casework(initial_player_data):
         except Exception as e:
             print(f"WARNING: Could not click Investigate link: {e}")
 
-    # Fire Safety Inspections
-    print("No Fire Investigations found. Checking for Fire Safety Inspections...")
-    inspection_tab_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Fire safety inspections']")
-    if not inspection_tab_links:
-        print("FAILED: Could not find Fire Safety Inspections tab.")
-        return False
-
-    try:
-        inspection_tab_links[0].click()
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-    except Exception as e:
-        print(f"WARNING: Could not click Fire Safety Inspections tab: {e}")
-        return False
-
-    # Inspect tasks (skip your own character)
-    inspect_links = _find_elements_quiet(By.XPATH, "//a[normalize-space()='Inspect']")
-    your_name = (initial_player_data or {}).get("Character Name", "")
-    for link in inspect_links:
-        try:
-            parent_row = link.find_element(By.XPATH, "./ancestor::tr")
-            if your_name and your_name in (parent_row.text or ""):
-                continue
-
-            link.click()
-            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-            print("Found eligible Fire Inspection task. Inspecting...")
-            return True
-        except Exception as e:
-            print(f"WARNING: Could not click an Inspect link: {e}")
-
-    print("No valid fire inspections available. Setting fallback cooldown.")
+    print("No active fires or investigations available. Setting fallback cooldown.")
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
     return False
 
