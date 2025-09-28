@@ -686,6 +686,7 @@ def _search_phonebook_by_ending(ending, crime_time_str: str | None = None, requi
         global_vars.driver.execute_script("window.scrollTo(0,0);")
         time.sleep(0.2)  # tiny pause so the button is definitely visible
         _find_and_click(By.XPATH, "//span[@class='police']")
+        print("Scrolled to top and navigated back to Police.")
         return alive, dead
 
     except Exception as e:
