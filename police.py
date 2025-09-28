@@ -827,7 +827,7 @@ def solve_case(character_name):
                     print("Suspect is dead per banner – burying case.")
                     _bury_case()
                     return True
-                elif fail_box and "you can't use staff" in fail_box.get_attribute("innerText").lower():
+                elif fail_box and "use staff" in fail_box.get_attribute("innerText").lower():
                     print("Suspect is an admin/staff account – burying case.")
                     _bury_case()
                     return True
