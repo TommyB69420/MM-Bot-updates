@@ -411,7 +411,7 @@ def perform_critical_checks(character_name):
             # look to add content-based probes when we next see a script check. the words will need to be specific to the script check page
             pass
 
-        # If a script check is found — alert discord, send puzzle HTML and arm the solution
+        # If a script check is found — alert discord and send puzzle text
         if script_check_found:
 
             # Try to capture the puzzle prompt's innerHTML
@@ -428,7 +428,7 @@ def perform_critical_checks(character_name):
                 except Exception:
                     prompt_html = (global_vars.driver.page_source or "")[:1800]
 
-            # Trim for Discord asd send
+            # Trim for Discord and send
             safe_html = prompt_html.strip()
             if len(safe_html) > 1800:
                 safe_html = safe_html[:1800] + "…"
@@ -438,13 +438,8 @@ def perform_critical_checks(character_name):
                 f"```html\n{safe_html}\n```"
             )
 
-            # Mark that we’re waiting for a Discord-provided solution
-            try:
-                setattr(global_vars, "_awaiting_script_solution", True)
-            except Exception:
-                pass
-
             # Stay on the page and let the main loop tick; don’t hard-exit the process
+            print("ADMIN SCRIPT CHECK detected — sent puzzle to Discord.")
             return True
 
     return False  # No critical issues
