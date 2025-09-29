@@ -569,7 +569,6 @@ def auto_buy_weapon(item_name: str):
     purchased = _find_and_click(By.XPATH, purchase_button_xpath)
     if purchased:
         print(f"[AutoBuy] Purchase attempt submitted for {item_name}")
-        send_discord_notification(f"Attempting to buy {item_name} from Weapon Shop!")
         time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
 
         # Check for success message in div#success
@@ -705,7 +704,6 @@ def auto_buy_drug_store_item(item_name: str):
 
     # Try to click the purchase button
     purchased = _find_and_click(By.XPATH, purchase_button_xpath)
-    send_discord_notification(f"Attempting to buy {item_name} from Drug Store.")
     if not purchased:
         print(f"[AutoBuy] Failed to click purchase button for {item_name}")
         return
@@ -840,7 +838,6 @@ def auto_buy_bionic(item_name: str, item_id: str):
         print(f"[AutoBuy] Failed to click purchase for {item_name}.")
         return
 
-    send_discord_notification(f"Attempting to buy {item_name} from Bionics Shop...")
     time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
 
     success = _find_element(By.XPATH, "//div[@id='success']")
@@ -1732,42 +1729,3 @@ def casino_slots():
         spins += 1
         if spins % 10 == 0:
             print(f"Spins so far: {spins}")
-
-def complete_script_check(answer: str) -> bool:
-    """Type the given answer into the ADMIN script-check input and submit it.
-    Returns True if the page indicates verification success, else False.
-    Assumes caller already holds DRIVER_LOCK.
-    """
-    try:
-        drv = global_vars.driver
-
-        # Type into the input
-        inp = drv.find_element(By.XPATH, ".//*[@class='input']")
-        try:
-            inp.clear()
-        except Exception:
-            pass
-        inp.send_keys(answer)
-
-        # Click the submit button
-        btn = drv.find_element(By.XPATH, ".//*[@class='submit']")
-        btn.click()
-
-        # Small wait for response
-        time.sleep(random.uniform(0.8, 1.4))
-
-        # Prefer explicit #success if present
-        try:
-            succ_nodes = drv.find_elements(By.XPATH, "//*[@id='success']")
-            page_text = (succ_nodes[0].text if succ_nodes else "") or ""
-            if "verified" in page_text.lower():
-                return True
-        except Exception:
-            pass
-
-        # Fallback: scan entire page
-        page_html = (drv.page_source or "").lower()
-        return ("verified" in page_html) or ("successfully" in page_html)
-
-    except Exception:
-        return False

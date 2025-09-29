@@ -319,12 +319,22 @@ def get_unread_journal_count():
 
 def _process_requests_offers_entries():
     """
-    Processes entries on the Requests/Offers page and sends them to Discord.
+    Processes entries on the Requests/Offers page and (optionally) sends them to Discord
+    if they match a configured allow-list of phrases.
     """
     print("\n--- Processing Requests/Offers Entries ---")
     requests_offers_table_xpath = "/html/body/div[4]/div[4]/div[1]/div[2]/form[2]/table"
     requests_offers_table_element = _find_element(By.XPATH, requests_offers_table_xpath)
     processed_keys = set()
+
+    # Load allow-list from settings.ini
+    ro_send_content_raw = ''
+    try:
+        ro_send_content_raw = global_vars.config['Journal Settings'].get('RequestsOffersSendToDiscord', fallback='').lower()
+    except KeyError:
+        print("WARNING: Missing [Journal Settings]/RequestsOffersSendToDiscord. No Requests/Offers will be sent to Discord.")
+
+    ro_send_list = {item.strip() for item in ro_send_content_raw.split(',') if item.strip()}
 
     if not requests_offers_table_element:
         print("No Requests/Offers table found.")
@@ -407,8 +417,16 @@ def _process_requests_offers_entries():
                 continue
 
             print(f"Processing NEW Request/Offer - Title: '{entry_title}', Time: '{entry_time}'")
-            send_discord_notification(f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}")
-            print(f"Sent request/offer to Discord: '{entry_title}'.")
+
+            # Only send if a whitelist phrase is present in title or content (case-insensitive)
+            combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
+            should_send = any(phrase in combined_entry_info for phrase in ro_send_list)
+
+            if should_send:
+                send_discord_notification(f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}")
+                print(f"Sent request/offer to Discord (matched whitelist): '{entry_title}'.")
+            else:
+                print(f"Skipped sending to Discord (no whitelist match): '{entry_title}'.")
 
             processed_keys.add(key)
 
@@ -642,7 +660,6 @@ def accept_lawyer_rep(entry_content):
         if accept_lawyer_rep_enabled and "has offered to represent you for" in entry_content.lower():
             print("Detected Lawyer Representation Offer. Attempting to accept it...")
             if _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS):
-                send_discord_notification("Accepted Lawyer Rep")
                 print("Successfully clicked ACCEPT for lawyer representation.")
             else:
                 print("FAILED to click ACCEPT for lawyer representation.")
@@ -658,7 +675,6 @@ def accept_blind_eye_offer(entry_content: str):
             print("Detected Blind Eye Offer. Attempting to accept it...")
             if _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS):
                 enqueue_blind_eyes(1)
-                send_discord_notification("Accepted a Blind Eye offer and queued it.")
                 print("Successfully accepted Blind Eye offer and queued it.")
             else:
                 print("FAILED to click ACCEPT for Blind Eye offer.")
@@ -688,7 +704,7 @@ def check_into_hospital_for_surgery():
     print("Trigger: Attempting to check into hospital for surgery...")
 
     from misc_functions import withdraw_money # import here to prevent a circular problem
-    if not withdraw_money(30000):
+    if not withdraw_money(20000):
         print("FAILED: Could not withdraw money for surgery.")
         return False
 
@@ -712,7 +728,6 @@ def check_into_hospital_for_surgery():
         return False
 
     print("SUCCESS: Surgery application submitted.")
-    send_discord_notification("Applied for surgery at hospital due to flu.")
     return True
 
 def drug_offers(initial_player_data: dict):
@@ -792,6 +807,7 @@ def drug_offers(initial_player_data: dict):
         'ecstasy': 'Ecstasy',
         'heroin': 'Heroin',
         'acid': 'Acid',
+        'speed': 'Speed',
     }
     drug_name = name_map.get(drug_key, drug_key.title())
 

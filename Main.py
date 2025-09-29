@@ -408,15 +408,11 @@ def perform_critical_checks(character_name):
             script_check_found = True
 
         else:
-            # look to add content-based probes when we next see a script check. the words will need to be soley specific to the script check page
+            # look to add content-based probes when we next see a script check. the words will need to be specific to the script check page
             pass
 
         # If a script check is found — alert discord, send puzzle HTML and arm the solution
         if script_check_found:
-
-            # Already waiting for a Discord-provided solution. Don't re-send over and over
-            if getattr(global_vars, "_awaiting_script_solution", False):
-                return True
 
             # Try to capture the puzzle prompt's innerHTML
             prompt_html = ""

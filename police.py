@@ -846,7 +846,6 @@ def solve_case(character_name):
                     return True
 
                 print("Case closed successfully (via 911 cache).")
-                send_discord_notification(f"Closed via 911: {cues.get('agg_time') or _get_case_cell('Time of Crime:')} | "f"{cues.get('victim') or _get_case_cell('Victim:')} → **{infer}**")
                 return True
 
             # Cache gave nothing - Forensics flow if enabled
@@ -934,7 +933,6 @@ def solve_case(character_name):
                     return True
 
                 print("Case closed successfully (via 911 cache.")
-                send_discord_notification(f"Closed via 911: {cues.get('agg_time') or _get_case_cell('Time of Crime:')} | "f"{cues.get('victim') or _get_case_cell('Victim:')} → **{infer}**")
                 return True
 
             print("911 cache gave nothing. BURY.")
@@ -994,7 +992,6 @@ def solve_case(character_name):
                 is_torch = (cues.get("agg_type") == "Torch")
                 if _update_case(is_torch) and _close_case():
                     print("Case closed successfully (via 911 cache).")
-                    send_discord_notification(f"Closed via 911: {cues.get('agg_time') or _get_case_cell('Time of Crime:')} | "f"{cues.get('victim') or _get_case_cell('Victim:')} → **{infer}**")
                     return True
             # If entering/updating/closing fails, just return to be safe
             print("Could not complete close after 911 suspect – RETURN case.")
