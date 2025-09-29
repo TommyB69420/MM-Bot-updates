@@ -1182,7 +1182,6 @@ def _update_case(is_torch: bool):
     idx = 8 if is_torch else 7
     return _find_and_click(By.XPATH, f"//*[@id='pd']//div[@class='links']/input[{idx}]")
 
-
 def _enter_travel_evidence():
     print("Adding travel evidence")
     if not _find_and_click(By.XPATH, "//*[@id='pd']//div[@class='links']/input[4]"):
@@ -1248,7 +1247,6 @@ def _profile_is_gangster() -> bool:
     """
     occ = (_read_profile_cell("occupation") or "").strip().lower()
     return occ == "gangster"
-
 
 def _records_database_add_if_results(kind: str) -> bool:
     """
