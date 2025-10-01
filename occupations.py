@@ -410,21 +410,36 @@ def engineering_casework(player_data):
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
-    # Loop over radios, skip your own
-    selected_radio = None
-    for candidate in reversed(radios):  # Select last most radio button
+    # Look for a Construction Yard task first
+    construction_radio = None
+    for candidate in radios:
         try:
-            container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text
-            if your_character_name and your_character_name.lower() in container_text.lower():
-                print(f"Skipping self-owned engineering task ({your_character_name}).")
-                continue
-            selected_radio = candidate
-            break
-        except Exception as e:
-            print(f"Warning: could not read a task row: {e}")
+            container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text.lower()
+            if "construction yard" in container_text:
+                construction_radio = candidate
+                break
+        except Exception:
+            continue
+
+    if construction_radio:
+        print("Found Construction Yard task.")
+        selected_radio = construction_radio
+    else:
+        # Fallback – pick the last available task, skipping self-owned
+        selected_radio = None
+        for candidate in reversed(radios):  # Select last most radio button
+            try:
+                container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text
+                if your_character_name and your_character_name.lower() in container_text.lower():
+                    print(f"Skipping self-owned engineering task ({your_character_name}).")
+                    continue
+                selected_radio = candidate
+                break
+            except Exception as e:
+                print(f"Warning: could not read a task row: {e}")
 
     if not selected_radio:
-        print("All available engineering tasks belong to you. Short cooldown.")
+        print("All available engineering tasks belong to you (and no Construction Yard). Short cooldown.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
