@@ -683,10 +683,23 @@ def accept_blind_eye_offer(entry_content: str):
 
 def accept_drug_smuggle(entry_content):
     """
-    If entry_content contains 'inside a dead body', attempts to click ACCEPT and queue a smuggle token.
+    If entry_content contains 'inside a dead body', attempts to accept or decline
+    based on settings.ini [Funeral]/DoSmuggle toggle.
     """
     try:
         if "inside of a dead body" in entry_content.lower():
+            do_smuggle = global_vars.config.getboolean('Funeral', 'DoSmuggle', fallback=True)
+
+            if not do_smuggle:
+                print("Drug smuggle detected but DoSmuggle=False. Declining offer...")
+                if _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS):
+                    send_discord_notification("Declined Drug Smuggle (disabled in settings.ini).")
+                    print("Successfully declined 'dead body' offer (disabled).")
+                else:
+                    print("FAILED to click DECLINE for 'dead body' offer.")
+                return
+
+            # If enabled, click accept and queue
             print("Detected drug smuggle offer. Attempting to accept it...")
             if _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS):
                 enqueue_funeral_smuggles(1)
