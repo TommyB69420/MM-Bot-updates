@@ -410,19 +410,19 @@ def engineering_casework(player_data):
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
-    # Look for a Construction Yard task first
+    # Look for a Construction Company task first
     construction_radio = None
     for candidate in radios:
         try:
             container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text.lower()
-            if "construction yard" in container_text:
+            if "Construction Company" in container_text:
                 construction_radio = candidate
                 break
         except Exception:
             continue
 
     if construction_radio:
-        print("Found Construction Yard task.")
+        print("Found Construction Company task.")
         selected_radio = construction_radio
     else:
         # Fallback – pick the last available task, skipping self-owned
@@ -439,7 +439,7 @@ def engineering_casework(player_data):
                 print(f"Warning: could not read a task row: {e}")
 
     if not selected_radio:
-        print("All available engineering tasks belong to you (and no Construction Yard). Short cooldown.")
+        print("All available engineering tasks belong to you. Short cooldown.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
