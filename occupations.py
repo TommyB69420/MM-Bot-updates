@@ -410,23 +410,27 @@ def engineering_casework(player_data):
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
         return False
 
-    # Look for a Construction Company task first
+    # Prefer the Construction Site / Business Repairs form if present
     construction_radio = None
-    for candidate in radios:
-        try:
-            container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text.lower()
-            if "Construction Company" in container_text:
-                construction_radio = candidate
-                break
-        except Exception:
-            continue
+    try:
+        form = _find_element(
+            By.XPATH,
+            "//form[input[@name='display' and @value='bus_repair'] "
+            "      or .//input[@type='submit' and contains(translate(@value,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'start repairs')]]",
+            timeout=1,
+            suppress_logging=True
+        )
+        if form:
+            construction_radio = form.find_element(By.XPATH, ".//input[@type='radio']")
+    except Exception:
+        construction_radio = None
 
+    selected_radio = None
     if construction_radio:
-        print("Found Construction Company task.")
+        print("Found Construction Site / Business Repairs task. Selecting it even if owned by self.")
         selected_radio = construction_radio
     else:
         # Fallback – pick the last available task, skipping self-owned
-        selected_radio = None
         for candidate in reversed(radios):  # Select last most radio button
             try:
                 container_text = candidate.find_element(By.XPATH, "./ancestor::tr[1]").text
