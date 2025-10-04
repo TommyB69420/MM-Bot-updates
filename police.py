@@ -6,6 +6,8 @@ from selenium.webdriver.common.by import By
 import global_vars
 import os, json, re
 from selenium.webdriver.common.keys import Keys
+
+from aws_911 import bulk_upsert_911, get_911_item_by_time_victim
 from comms_journals import send_discord_notification
 from database_functions import _set_last_timestamp, _read_json_file, _write_json_file
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, _find_and_send_keys, _get_element_text, _select_dropdown_option
@@ -63,7 +65,7 @@ def police_911():
             victim = cols[2].text.strip()
             suspect = cols[3].text.strip()
 
-            # Skip “escaped” suspects entirely (don’t post, don’t cache)
+            # Skip “escaped” suspects entirely and dont upload to DDB
             if re.search(r"\bescaped\b", suspect, flags=re.IGNORECASE):
                 print(f"Skipping 911 row with escaped suspect: {time} {crime} {victim} {suspect}")
                 continue
@@ -165,10 +167,10 @@ def police_911():
         for row_data in parsed_rows:
             row_data["online_users"] = online_users
 
-        # Persist crimes + who-was-online in one JSON
+        # Persist crimes and who-was-online to DynamoDB (organised by Time+Victim)
         if parsed_rows:
-            _append_911_cache(parsed_rows)
-            print(f"Cached {len(parsed_rows)} 911 rows with online users to game_data.")
+            wrote = bulk_upsert_911(parsed_rows)
+            print(f"[DynamoDB] Upserted {wrote}/{len(parsed_rows)} 911 rows (with online snapshot).")
 
     else:
         print("FAILED: Could not find textarea to append online list.")
@@ -815,10 +817,10 @@ def solve_case(character_name):
         ])
 
         if no_dna and no_fp and no_name_cues:
-            # Try the 911 cache before burying
+            # Try the 911 on DDB before burying
             infer = _try_infer_suspect_from_911(cues)
             if infer:
-                print(f"911 cache identified suspect: {infer}")
+                print(f"911 DDB identified suspect: {infer}")
                 if not _enter_suspect(infer):
                     print("Failed to enter 911 suspect; returning the case.")
                     _return_case()
@@ -845,10 +847,10 @@ def solve_case(character_name):
                     _bury_case()
                     return True
 
-                print("Case closed successfully (via 911 cache).")
+                print("Case closed successfully (via 911 DDB).")
                 return True
 
-            # Cache gave nothing - Forensics flow if enabled
+            # 911 gave nothing - Forensics flow if enabled
             cfg = configparser.ConfigParser()
             cfg.read('settings.ini')
             if cfg.getboolean('Police', 'DoForensics', fallback=False):
@@ -906,10 +908,10 @@ def solve_case(character_name):
 
         # Minimum 2 characters required for phone book search
         if ending and len(ending.strip()) == 1:
-            print(f"Only 1-letter clue ('{ending}') — checking 911 cache before burying…")
+            print(f"Only 1-letter clue ('{ending}') — checking 911 before burying…")
             infer = _try_infer_suspect_from_911(cues)
             if infer:
-                print(f"911 cache identified suspect: {infer}")
+                print(f"911 identified suspect: {infer}")
                 if not _enter_suspect(infer):
                     print("Failed to enter 911-resolved suspect; returning the case.")
                     _return_case()
@@ -932,10 +934,10 @@ def solve_case(character_name):
                     _bury_case()
                     return True
 
-                print("Case closed successfully (via 911 cache.")
+                print("Case closed successfully (via 911.")
                 return True
 
-            print("911 cache gave nothing. BURY.")
+            print("911 gave nothing. BURY.")
             _bury_case()
             return True
 
@@ -984,14 +986,14 @@ def solve_case(character_name):
                     print(f"Suspect resolved from obituary: {suspect}")
 
     if not suspect:
-        # Try 911 cache before giving up
+        # Try 911 before giving up
         infer = _try_infer_suspect_from_911(cues)
         if infer:
-            print(f"911 cache identified suspect: {infer}")
+            print(f"911 identified suspect: {infer}")
             if _enter_suspect(infer):
                 is_torch = (cues.get("agg_type") == "Torch")
                 if _update_case(is_torch) and _close_case():
-                    print("Case closed successfully (via 911 cache).")
+                    print("Case closed successfully (via 911).")
                     return True
             # If entering/updating/closing fails, just return to be safe
             print("Could not complete close after 911 suspect – RETURN case.")
@@ -1310,42 +1312,6 @@ def _records_database_add_if_results(kind: str) -> bool:
         print(f"RECORDS DB: Unknown result '{kind}'. Expected 'DNA' or 'Fingerprints'.")
         return False
 
-def _append_911_cache(new_rows: list):
-    """Merge new 911 rows into a local JSON cache (dedupe by time+crime+victim+suspect)."""
-    path = global_vars.POLICE_911_CACHE_FILE
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    # Lazy-init file if missing
-    if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump([], f)
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cache = json.load(f)
-    except Exception:
-        cache = []
-
-    seen = {(r.get("time"), r.get("crime"), r.get("victim"), r.get("suspect")) for r in cache}
-
-    for r in new_rows or []:
-        key = (r.get("time"), r.get("crime"), r.get("victim"), r.get("suspect"))
-        if key not in seen:
-            entry = {
-                "time": r.get("time") or "",
-                "crime": r.get("crime") or "",
-                "victim": r.get("victim") or "",
-                "suspect": r.get("suspect") or "",
-            }
-            # keep the online snapshot if present
-            if "online_users" in r and isinstance(r["online_users"], list):
-                entry["online_users"] = ", ".join(r["online_users"])
-            cache.append(entry)
-            seen.add(key)
-
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
-
 def _parse_online_usernames(block: str) -> list[str]:
     """Convert raw pasted online list text into a clean username list."""
     if not block:
@@ -1388,55 +1354,67 @@ def _is_whacking_row(row):
 
 def _try_infer_suspect_from_911(cues) -> str | None:
     """
-    If we have Time of Crime + Victim for the open case, look for an exact
-    match in the 911 JSON. When found, take the 'suspect' suffix from
-    that row and resolve it against the 'online_users'.
-    Return a single username, or None if ambiguous/not found.
+    Use (Time of Crime, Victim) to fetch the 911 row from DynamoDB,
+    then resolve the suspect suffix against the stored OnlineUsers snapshot.
+    Returns a single username or None if ambiguous or not found.
     """
     try:
-        print("Attempting 911 cache check…")
-        # prefer values already parsed from the case body
+        print("Attempting 911 DDB lookup…")
+
+        # Use parsed values first; fall back to scraping the case page
         time_of_crime = (cues or {}).get("agg_time") or _get_case_cell("Time of Crime:")
         victim = (cues or {}).get("victim") or _get_case_cell("Victim:")
+        fingerprint = (cues or {}).get("fingerprint")
 
         if not time_of_crime or not victim:
             return None
 
-        path = global_vars.POLICE_911_CACHE_FILE
-        if not os.path.exists(path):
+        # Fetch the single item from DDB
+        item = get_911_item_by_time_victim(time_of_crime, victim)
+        if not item:
+            print("No 911 row found in DDB for this (time, victim).")
             return None
 
-        with open(path, "r", encoding="utf-8") as f:
-            rows = json.load(f) or []
+        suspect_suffix = (item.get("Suspect") or "").strip()
+        if not suspect_suffix or suspect_suffix == "???":
+            print("DDB row has unknown/blank suspect suffix.")
+            return None
 
-        for r in rows:
-            if (r.get("time") == time_of_crime) and (r.get("victim", "").lower() == victim.lower()):
-                suffix = (r.get("suspect") or "").strip()
-                if not suffix:
-                    print("911 match found but suspect suffix is empty")
-                    return None
+        # Turn OnlineUsers into a clean list (item already stores a list)
+        online_users = item.get("OnlineUsers") or []
+        if not isinstance(online_users, list):
+            print("DDB row has unexpected OnlineUsers format; skipping.")
+            return None
 
-                if len(suffix) == 1:
-                    print(f"911 suffix is only 1 letter ('{suffix}') — proceeding cautiously…")
+        # Normalize suffix to last 3 characters
+        suffix = re.sub(r"[^\w]+$", "", suspect_suffix)
+        suffix = suffix[-3:] if len(suffix) >= 3 else suffix
+        if len(suffix) < 1:
+            return None
 
-                # online_users is stored as a single comma-separated string in the cache
-                online_raw = r.get("online_users", "") or ""
-                users = [u.strip() for u in re.split(r"[,]+", online_raw) if u.strip()]
+        # Candidates are usernames whose name ends with that suffix
+        candidates = [u for u in online_users if str(u).endswith(suffix)]
 
-                sfx = suffix.lower()
-                candidates = [u for u in users if u.lower().endswith(sfx)]
-                print(f"911 MATCH: {time_of_crime} | {victim} → suffix '{suffix}' → candidates: {candidates}")
+        # If we have a fingerprint clue, prefer matches containing it
+        if fingerprint and len(candidates) > 1:
+            narrowed = [u for u in candidates if fingerprint in u]
+            if len(narrowed) == 1:
+                print(f"Resolved via fingerprint + suffix: {narrowed[0]}")
+                return narrowed[0]
 
-                if len(candidates) == 1:
-                    return candidates[0]  # resolved suspect
+        if len(candidates) == 1:
+            print(f"Resolved via suffix match: {candidates[0]}")
+            return candidates[0]
 
-                # ambiguous or none → don’t guess
-                return None
+        if len(candidates) > 1:
+            print(f"Multiple DDB candidates for suffix '{suffix}': {candidates} — ambiguous.")
+            return None
 
-        print(f"911 cache check complete — no matching entries found for Victim={victim}, Time={time_of_crime}.")
+        print("No candidates matched DDB online snapshot.")
         return None
+
     except Exception as e:
-        print(f"911 cache check failed: {e}")
+        print(f"911 DDB lookup failed: {e}")
         return None
 
 def train_forensics():

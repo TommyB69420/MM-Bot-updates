@@ -3,7 +3,7 @@ import time
 import random
 from selenium.webdriver.common.by import By
 from helper_functions import _get_element_text, _get_element_attribute
-from database_functions import _read_text_file, _get_last_timestamp
+from database_functions import _read_text_file, _get_last_timestamp, get_timer_remaining_seconds, TIMER_NAME_FUNERAL_YELLOW
 import global_vars
 
 def parse_game_datetime(time_str):
@@ -21,6 +21,15 @@ def parse_game_datetime(time_str):
     except Exception as e:
         print(f"An unexpected error occurred while parsing game time '{time_str}': {e}")
         return None
+
+def get_current_game_time():
+    """
+    Returns the current in-game time as a naive datetime (game/server timezone).
+    Falls back to local time if HUD temporarily unavailable.
+    """
+    raw = _get_element_text(By.XPATH, "//*[@id='header_time']/div")
+    dt = parse_game_datetime(raw) if raw else None
+    return dt if dt is not None else datetime.datetime.now()
 
 def get_game_timer_remaining(timer_xpath):
     """
@@ -48,7 +57,6 @@ def get_game_timer_remaining(timer_xpath):
     # Instead of blocking forever, small wait before trying to check for timers again.
     return random.uniform(15, 45)
 
-
 def get_all_active_game_timers():
     """
     Reads all active in-game timers from the current page, calculates file-based timers,
@@ -69,7 +77,7 @@ def get_all_active_game_timers():
         'bank_add_clients_time_remaining': 0,
         'post_911_time_remaining': 0,
 
-        'yellow_pages_scan_time_remaining': 0,
+        #'yellow_pages_scan_time_remaining': 0,
         'funeral_parlour_scan_time_remaining': 0,
         'aggravated_crime_time_remaining': 0,
         'armed_robbery_recheck_time_remaining': 0,
@@ -106,23 +114,7 @@ def get_all_active_game_timers():
 
     # --- Phase 2: Calculate File-Based Timers & Aggravated Crime Cooldowns ---
 
-    # Yellow Pages Scan Timer (Always enabled, 7-hour interval)
-    yellow_pages_scan_interval_hours = 1
-    last_yp_scan_time = _get_last_timestamp(global_vars.YELLOW_PAGES_LAST_SCAN_FILE)
-    if last_yp_scan_time:
-        remaining = int(yellow_pages_scan_interval_hours * 3600 - (current_time - last_yp_scan_time).total_seconds())
-        timers['yellow_pages_scan_time_remaining'] = max(0, remaining)
-    else:
-        timers['yellow_pages_scan_time_remaining'] = 0  # If never scanned, scan immediately
-
-    # Funeral Parlour Scan Timer (Always enabled, 8-hour interval)
-    funeral_parlour_scan_interval_hours = 2
-    last_fp_scan_time = _get_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE)
-    if last_fp_scan_time:
-        remaining = int(funeral_parlour_scan_interval_hours * 3600 - (current_time - last_fp_scan_time).total_seconds())
-        timers['funeral_parlour_scan_time_remaining'] = max(0, remaining)
-    else:
-        timers['funeral_parlour_scan_time_remaining'] = 0  # If never scanned, scan immediately
+    timers['funeral_parlour_scan_time_remaining'] = get_timer_remaining_seconds(TIMER_NAME_FUNERAL_YELLOW)
 
     # Weapon Shop Check Timer
     next_ws_check = _get_last_timestamp(global_vars.WEAPON_SHOP_NEXT_CHECK_FILE)

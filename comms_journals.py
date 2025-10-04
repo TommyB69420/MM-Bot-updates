@@ -6,7 +6,6 @@ import math
 import re
 import time
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
-from database_functions import set_player_apartment
 from helper_functions import _navigate_to_page_via_menu, _select_dropdown_option, enqueue_blind_eyes, enqueue_funeral_smuggles
 from selenium.webdriver.common.by import By
 from helper_functions import _find_element, _find_elements, _find_and_click, _get_element_text
@@ -14,6 +13,7 @@ import global_vars
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from aws_players import upsert_player_apartment
 
 _PROCESSED_RO_KEYS = set()
 
@@ -1138,11 +1138,10 @@ def _record_bne_witness_apartment(entry_content: str) -> bool:
     """
     If the journal text says:
       "You witnessed <name>`s <Flat|Studio Unit|Penthouse|Palace> get broken into!"
-    extract <name> and apartment, then persist it to aggravated_crime_cooldown.json.
+    extract <name> and apartment, then persist it to DynamoDB (Player.Apartment).
     Returns True if we updated, False otherwise.
     """
     try:
-        # Match both "'s" and "`s"
         m = re.search(
             r"You witnessed\s+(?P<name>.+?)(?:'|`)s\s+(?P<apt>Flat|Studio Unit|Penthouse|Palace)\s+get broken into!",
             entry_content,
@@ -1156,13 +1155,15 @@ def _record_bne_witness_apartment(entry_content: str) -> bool:
         if not name or not apt:
             return False
 
-        set_player_apartment(name, apt)  # normalizes internally via your DB layer
-        print(f"[Journal] Witnessed BnE: set apartment for {name} -> {apt}")
-        try:
-            send_discord_notification(f"Witnessed BnE: recorded {name}'s apartment as {apt}.")
-        except Exception:
-            pass
-        return True
+        ok = upsert_player_apartment(name, apt)
+        if ok:
+            print(f"[Journal] Witnessed BnE: set Apartment in DDB for {name} -> {apt}")
+            return True
+        else:
+            print(f"[Journal] Failed to update Apartment in DDB for {name}")
+            return False
+
     except Exception as e:
         print(f"[Journal] Error parsing witness BnE line: {e}")
         return False
+

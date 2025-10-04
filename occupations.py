@@ -300,55 +300,44 @@ def laundering(player_data):
 def medical_casework(player_data):
     """
     Manages and processes hospital casework.
-    Only works if occupation is 'Nurse', 'Doctor', 'Surgeon' or 'Hospital Director'.
-    Navigates to the hospital if needed and performs available casework tasks.
+    Assumes caller only invokes this when occupation is appropriate.
+    Navigates to the Hospital via menu, opens PATIENTS, then performs available casework tasks.
     """
     print("\n--- Beginning Medical Casework Operation ---")
 
-    occupation = player_data.get("Occupation")
-    your_character_name = player_data.get("Character Name")
-    medical_eligible_occupations = ["Nurse", "Doctor", "Surgeon", "Hospital Director"]
+    # Filter your own name from rows
+    your_character_name = (player_data or {}).get("Character Name", "")
 
-    if occupation not in medical_eligible_occupations:
+    # Navigate to Hospital
+    if not _navigate_to_page_via_menu(
+        "//span[@class='city']",
+        "//a[@class='business hospital']",
+        "Hospital"
+    ):
+        print("FAILED: Could not navigate to Hospital via menu. Setting cooldown.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 180))
         return False
 
-    # Navigate to Hospital if not already there
-    if 'hospital.asp' not in global_vars.driver.current_url:
-        city_menu_xpath = "//div[@id='nav_left']//a[@href='/localcity/local.asp']"
-        hospital_xpath = "//a[@href='hospital.asp' and contains(@class, 'business') and contains(@class, 'hospital')]"
-
-        if not _find_and_click(By.XPATH, city_menu_xpath):
-            print("FAILED: Navigation to City Menu failed. Setting cooldown.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 180))
-            return False
-
-        if not _find_and_click(By.XPATH, hospital_xpath):
-            print("FAILED: Hospital not found. Possibly torched. Setting cooldown.")
+    # If the Hospital is torched/under repair, the page usually shows a #fail block.
+    fail_el = _find_element(By.ID, "fail", timeout=1, suppress_logging=True)
+    if fail_el:
+        fail_html = _get_element_attribute(By.ID, "fail", "innerHTML") or ""
+        if "under going repairs" in (fail_html or "").lower():
+            print("Hospital is under repairs. Backing off.")
             global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(5, 7))
             return False
 
-        if _find_element(By.ID, "fail"):
-            fail_text = _get_element_attribute(By.ID, "fail", "innerHTML")
-            if fail_text and "under going repairs" in fail_text:
-                print("Hospital is torched. Backing off.")
-                global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(5, 7))
-                return False
+    # Click the PATIENTS tab before scanning for work
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='PATIENTS']"):
+        print("FAILED: Could not click 'PATIENTS' tab. Aborting medical casework.")
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120))
+        return False
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
-    else:
-        # If already on hospital.asp, click the "PATIENTS" link to refresh
-        print("Already on Hospital page. Clicking 'PATIENTS' to refresh.")
-        patients_xpath = "//div[@class='links']//a[@href='hospital.asp?display=patients' and contains(text(), 'PATIENTS')]"
-        if not _find_and_click(By.XPATH, patients_xpath):
-            print("ERROR: Could not click 'PATIENTS' link for refresh.")
-
-    print("SUCCESS: On Hospital page. Checking for casework...")
+    print("SUCCESS: On PATIENTS page. Checking for casework...")
 
     # Ensure the table with casework options is visible
     table_xpath = "//*[@id='holder_table']/form/div[@id='holder_content']/center/table"
-    if not _find_element(By.XPATH, table_xpath):
-        pass
-
     table_html = _get_element_attribute(By.XPATH, table_xpath, "innerHTML")
     if not table_html:
         print("No hospital casework table found.")
@@ -357,16 +346,17 @@ def medical_casework(player_data):
 
     task_clicked = False
 
+    # Process task in order of priority
     for row in table_html.split("<tr>"):
         if "PROCESS SAMPLE" in row:
             task_clicked = _find_and_click(By.LINK_TEXT, "PROCESS SAMPLE")
             break
         elif "COMMENCE SURGERY" in row:
-            if your_character_name not in row:
+            if your_character_name and your_character_name not in row:
                 task_clicked = _find_and_click(By.LINK_TEXT, "COMMENCE SURGERY", timeout=5)
                 break
         elif "START TREATMENT" in row:
-            if your_character_name not in row:
+            if your_character_name and your_character_name not in row:
                 task_clicked = _find_and_click(By.LINK_TEXT, "START TREATMENT", timeout=5)
                 break
         elif "PROVIDE ASSISTANCE" in row:
@@ -376,10 +366,10 @@ def medical_casework(player_data):
     if task_clicked:
         print("SUCCESS: Casework task initiated.")
         return True
-    else:
-        print("No casework tasks found. Setting fallback cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
-        return False
+
+    print("No casework tasks found. Setting fallback cooldown.")
+    global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
+    return False
 
 def engineering_casework(player_data):
     """
@@ -1004,7 +994,15 @@ def fire_casework(initial_player_data):
         print("FAILED: Could not navigate to Fire Station via menu.")
         return False
 
-    print("SUCCESS: Navigated to Fire Station. Checking for active fires...")
+    print("SUCCESS: Navigated to Fire Station. Opening 'Fires' tab...")
+
+    # Click the "Fires" button before checking for work
+    if not _find_and_click(By.XPATH, "//a[contains(text(),'Fires')]"):
+        print("FAILED: Could not click 'Fires' tab. Aborting fire casework.")
+        return False
+    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    print("SUCCESS: Opened 'Fires' tab. Checking for active fires...")
 
     # Attend Fire
     attend_fire_links = _find_elements_quiet(By.XPATH, "//tbody/tr[2]/td[4]/a[1]")

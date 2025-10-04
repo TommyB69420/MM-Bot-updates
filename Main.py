@@ -4,14 +4,14 @@ import time
 import sys
 from selenium.webdriver.common.by import By
 import global_vars
+from aws_botusers import upsert_bot_user_snapshot, mark_stale_bot_users_offline
 from discord_bridge import start_discord_bridge
-from agg_crimes import execute_aggravated_crime_logic, execute_yellow_pages_scan, execute_funeral_parlour_scan
+from agg_crimes import execute_aggravated_crime_logic, execute_funeral_parlour_scan
 from earn_functions import execute_earns_logic, diligent_worker
 from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
     manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
     customs_blind_eyes, execute_smuggle_for_player, mortician_autopsy, community_service_foreign
-from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, \
-    blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
+from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
 from database_functions import init_local_db
 from police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
@@ -306,7 +306,6 @@ def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_co
         smuggle_tokens = funeral_smuggle_queue_count()
         active.append((f"Smuggle (queued {smuggle_tokens})", trafficking))
 
-    active.append(('Yellow Pages Scan', yps))
     active.append(('Funeral Parlour Scan', fps))
 
     # Aggravated Crime timers (use enabled_configs flags)
@@ -497,6 +496,22 @@ while True:
     Consumables = initial_player_data.get("Consumables 24h")
     print(f"\nCurrent Character: {character_name}, Rank: {rank}, Occupation: {occupation}\nClean Money: {clean_money}, Dirty Money: {dirty_money}\nLocation: {location}. Home City: {home_city}. Next Rank: {next_rank_pct}. Consumables 24h: {Consumables}\n")
 
+    upsert_bot_user_snapshot({
+        "name": character_name,
+        "rank": rank,
+        "occupation": occupation,
+        "location": location,
+        "home_city": home_city,
+        "clean_money": clean_money,
+        "dirty_money": dirty_money,
+        "next_rank_pct": next_rank_pct,
+        "consumables_24h": Consumables,
+    })
+
+    # Periodically mark any stale users offline (no-op if called too soon)
+    mark_stale_bot_users_offline(max_age_seconds=180)  # ~3 min online window
+
+
     # Read enabled configs.
     enabled_configs = get_enabled_configs(location, occupation, home_city, rank, next_rank_pct)
 
@@ -574,18 +589,7 @@ while True:
         if perform_critical_checks(character_name):
             continue
 
-        # Yellow pages scan logic
-        if yellow_pages_scan_time_remaining <= 0:
-            print(f"Yellow Pages Scan timer ({yellow_pages_scan_time_remaining:.2f}s) is ready. Attempting scan.")
-            if execute_yellow_pages_scan():
-                action_performed_in_cycle = True
-            else:
-                print("Yellow Pages Scan logic did not perform an action or failed. No immediate cooldown from here.")
-
-        if perform_critical_checks(character_name):
-            continue
-
-        # Funeral Parlour scan logic
+        # Funeral Parlour & Yellow Pages scan logic
         if funeral_parlour_scan_time_remaining <= 0:
             print(f"Funeral Parlour Scan timer ({funeral_parlour_scan_time_remaining:.2f}s) is ready. Attempting scan.")
             if execute_funeral_parlour_scan():

@@ -1,10 +1,11 @@
 import datetime
 import random
-import os
+import os, platform
 import shutil
 import requests
 import configparser
 import subprocess
+import boto3
 import time
 import threading
 import json
@@ -111,21 +112,17 @@ MIN_POLLING_INTERVAL_UPPER = 35
 startup_login_ping_sent = False # One time Discord ping on startup (guard)
 
 # --- Script Version ---
-SCRIPT_VERSION = "29-09-2025"
+SCRIPT_VERSION = "DEV"
 
 # Directory for game data and logs
 COOLDOWN_DATA_DIR = 'game_data'
-COOLDOWN_FILE = os.path.join(COOLDOWN_DATA_DIR, 'aggravated_crime_cooldowns.json')
 AGGRAVATED_CRIMES_LOG_FILE = os.path.join(COOLDOWN_DATA_DIR, 'aggravated_crimes_log.txt')
-FUNERAL_PARLOUR_LAST_SCAN_FILE = os.path.join(COOLDOWN_DATA_DIR, 'funeral_parlour_last_scan.txt')
-YELLOW_PAGES_LAST_SCAN_FILE = os.path.join(COOLDOWN_DATA_DIR, 'yellow_pages_last_scan.txt')
 AGGRAVATED_CRIME_LAST_ACTION_FILE = os.path.join(COOLDOWN_DATA_DIR, 'aggravated_crimes_last_action.txt')
 ALL_DEGREES_FILE = os.path.join(COOLDOWN_DATA_DIR, 'all_degrees.json')
 WEAPON_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "weapon_shop_next_check.txt")
 GYM_TRAINING_FILE = os.path.join("game_data", "gym_timer.txt")
 BIONICS_SHOP_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "bionics_shop_next_check.txt")
 POLICE_911_NEXT_POST_FILE = os.path.join(COOLDOWN_DATA_DIR, "police_911_next_post.txt")
-POLICE_911_CACHE_FILE = os.path.join(COOLDOWN_DATA_DIR, "police_911_cache.json")
 PENDING_FORENSICS_FILE = os.path.join(COOLDOWN_DATA_DIR, "pending_forensics.json")
 FORENSICS_TRAINING_DONE_FILE = os.path.join(COOLDOWN_DATA_DIR, "forensics_training_done.json")
 POLICE_TRAINING_DONE_FILE = os.path.join(COOLDOWN_DATA_DIR, "police_training_done.json")
@@ -180,6 +177,10 @@ initial_game_url = None
 
 # Global Variable to store if the script needs to reselect an earn after taking a promotion.
 force_reselect_earn = False
+
+# Promo "unable to take promo" Discord rate-limit (runtime memory only)
+_promo_unable_notify_count = 0
+_promo_unable_last_name = None
 
 # Global Variable that tells Main.py to pause while Discord uses Selenium
 DRIVER_LOCK = threading.RLock()
@@ -304,3 +305,39 @@ CITY_ALIASES = {
     "beirut": "Beirut",
     "rut": "Beirut",
 }
+
+# AWS DynamoDB (fixed config)
+
+AWS_REGION = "ap-southeast-2"
+AWS_ACCESS_KEY_ID = "AKIAYJ2XOFSTYVOOASFR"
+AWS_SECRET_ACCESS_KEY = "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"
+
+# Create a single DynamoDB resource for the whole app
+DDB = boto3.resource(
+    "dynamodb",
+    region_name=AWS_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+)
+
+# Players table + primary key (fixed names)
+DDB_PLAYERS_TABLE = "Player"
+DDB_PLAYER_PK = "PlayerName"
+DDB_TIMERS_TABLE = "Timers" 
+
+def get_players_table():
+    """Return the DynamoDB players table object."""
+    return DDB.Table(DDB_PLAYERS_TABLE)
+
+def get_timers_table():
+    return DDB.Table(DDB_TIMERS_TABLE)
+
+BOT_ID = os.getenv("BOT_ID") or platform.node() or "unknown-bot"
+
+# Bot Users table and primary key
+DDB_BOT_USERS_TABLE = "BotUsers"   # DynamoDB table names can’t have spaces
+DDB_BOT_USERS_PK    = "PlayerName" # reuse the same PK attribute name for consistency
+
+def get_bot_users_table():
+    """Return the DynamoDB BotUsers table object."""
+    return DDB.Table(DDB_BOT_USERS_TABLE)

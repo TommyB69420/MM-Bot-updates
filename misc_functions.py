@@ -1417,10 +1417,22 @@ def take_promotion():
         msg = f"Unable to auto-take promotion — manual action required: {promo_name}"
         print("Promo:", msg)
         global_vars._script_promo_check_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(2, 4))
-        try:
-            send_discord_notification(msg)
-        except Exception:
-            pass
+
+        # --- Rate-limit Discord spam to 5 notifications per promo (resets on success or promo change) ---
+        last_name = getattr(global_vars, "_promo_unable_last_name", None)
+        if last_name != promo_name:
+            setattr(global_vars, "_promo_unable_notify_count", 0)
+            setattr(global_vars, "_promo_unable_last_name", promo_name)
+
+        count = getattr(global_vars, "_promo_unable_notify_count", 0)
+        if count < 5:
+            try:
+                send_discord_notification(msg)
+            except Exception:
+                pass
+            setattr(global_vars, "_promo_unable_notify_count", count + 1)
+        # else: silently suppress further pings
+
         return False
 
     # Click the mapped option
@@ -1440,6 +1452,10 @@ def take_promotion():
         send_discord_notification(f"Taking promotion: {promo_name}")
     except Exception:
         pass
+
+    # Reset the "unable" spam counter after a successful accept
+    setattr(global_vars, "_promo_unable_notify_count", 0)
+    setattr(global_vars, "_promo_unable_last_name", None)
 
     setattr(global_vars, "force_reselect_earn", True)
     print("Promo: Flag set to force reselecting earn on next cycle.")

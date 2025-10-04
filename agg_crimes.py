@@ -2,73 +2,244 @@ import datetime
 import random
 import re
 import time
+from urllib.parse import urlsplit
 from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
-from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, remove_player_cooldown
+from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, get_crime_targets_from_ddb
 import global_vars
-from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, \
-    _find_element, community_service_queue_count, _get_element_text_quiet, enqueue_community_services
+from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, _find_element, community_service_queue_count, _get_element_text_quiet, enqueue_community_services
 from misc_functions import transfer_money
-from timer_functions import parse_game_datetime
+from timer_functions import parse_game_datetime, get_current_game_time
 from comms_journals import send_discord_notification
+from aws_players import upsert_player_home_city, mark_top_job
+from database_functions import acquire_distributed_timer, complete_distributed_timer, reschedule_distributed_timer, TIMER_NAME_FUNERAL_YELLOW, remove_player_cooldown, rename_player_in_players_table
+from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Attr
+
+try:
+    import requests  # pip install requests
+except Exception:
+    requests = None
 
 def execute_funeral_parlour_scan():
-    """Navigates to Funeral Parlour, views obituaries, and deletes dead players from DB."""
+
+    PROFILE_NEWNAME_XPATH = "//*[@id='profile_quote']/div[2]/span/strong/span[2]/a"
+    OBITUARIES_TABLE_XPATH = "/html/body/div[4]/div[4]/div[1]/div[2]/div/table"
+    VIEW_DAILY_OBITS_XPATH = "//a[normalize-space()='View Daily Obituaries']"
+    DEATH_TYPES_TO_DELETE = {"suicide", "murdered", "admin whack"}  # case-insensitive
+    INTERVAL_SECONDS = 3600   # shared once-per-hour cadence across all bots
+    LEASE_SECONDS = 600       # 10-min lease while one bot is working
+    RETRY_SECONDS = 600       # retry in 10 minutes on soft failures
+
+    NAME_CHANGE_WEBHOOK = "https://discord.com/api/webhooks/1422121451007508510/Gc2gbdY0LeFajfGAtLMGHkf0u3vS6wOzlNqrYZRZOV0KVVUdflYD6HV-lxSajreGrJLr"
+    try:
+        import requests  # ensure installed
+    except Exception:
+        requests = None
+
+    def _post_name_change_discord(old_name: str, new_name: str):
+        msg = f"🪦 **Obituaries** — Name Change: `{old_name}` → `{new_name}`"
+        if not requests:
+            print(f"[Discord skipped] {msg}")
+            return
+        try:
+            resp = requests.post(NAME_CHANGE_WEBHOOK, json={"content": msg}, timeout=10)
+            if resp.status_code not in (200, 201, 202, 204):
+                print(f"[Discord webhook error] HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[Discord webhook exception] {e}")
+
+    def _ensure_obituaries_visible():
+        """Ensure the Obituaries table is visible; re-navigate if needed."""
+        if _find_element(By.XPATH, OBITUARIES_TABLE_XPATH):
+            return True
+        if not _navigate_to_page_via_menu("//span[@class='city']",
+                                          "//a[@class='business funeral_parlour']",
+                                          "Funeral Parlour"):
+            return False
+        if not _find_and_click(By.XPATH, VIEW_DAILY_OBITS_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+            return False
+        global_vars.wait.until(ec.presence_of_element_located((By.XPATH, OBITUARIES_TABLE_XPATH)))
+        return True
+
     print("\n--- Starting Funeral Parlour Scan for Deceased Players ---")
     initial_url = global_vars.driver.current_url
 
-    if not _navigate_to_page_via_menu(
-            "//span[@class='city']",
-            "//a[@class='business funeral_parlour']",
-            "Funeral Parlour"):
-        return False
-
-    closed_message_element = _get_element_text_quiet(By.XPATH, "//*[contains(text(), 'while under going repairs')]", global_vars.EXPLICIT_WAIT_SECONDS)
-
-    if closed_message_element:
-        print("Funeral Parlour is currently closed for repairs. Resetting scan timer.")
-        _set_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE, datetime.datetime.now())
-        global_vars.driver.get(initial_url)
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    # Acquire shared timer/lease; skip if another bot owns it or it's not due yet
+    got_lock = acquire_distributed_timer(
+        TIMER_NAME_FUNERAL_YELLOW,
+        interval_seconds=INTERVAL_SECONDS,
+        lease_seconds=LEASE_SECONDS,
+    )
+    if not got_lock:
+        print("Shared timer not due or leased by another bot. Skipping.")
         return True
 
-    if not _find_and_click(By.XPATH, "//a[normalize-space()='View Daily Obituaries']", pause=global_vars.ACTION_PAUSE_SECONDS * 2):
-        return False
-
-    obituary_table = _find_element(By.XPATH, "/html/body/div[4]/div[4]/div[1]/div[2]/div/table")
-    if not obituary_table:
-        # Treat as a successful scan—set normal cooldown via timestamp and exit.
-        print("Obituary table not found; treating as successful scan and setting cooldown.")
-        _set_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE, datetime.datetime.now())
-        global_vars.driver.get(initial_url)
-        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-        return True
-
-    rows = obituary_table.find_elements(By.TAG_NAME, "tr")[1:]
-    deceased_players = []
-    for row in rows:
+    # Navigate to Funeral Parlour
+    if not _navigate_to_page_via_menu("//span[@class='city']",
+                                      "//a[@class='business funeral_parlour']",
+                                      "Funeral Parlour"):
+        print("Navigation to Funeral Parlour failed. Rescheduling in 10 minutes.")
+        reschedule_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, RETRY_SECONDS)
         try:
-            name_element = row.find_element(By.XPATH, ".//td[1]/a")
-            deceased_players.append(name_element.text.strip())
-        except NoSuchElementException:
-            continue
-    if deceased_players:
-        for player_name in deceased_players:
-            remove_player_cooldown(player_name)
+            global_vars.driver.get(initial_url)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            pass
+        return True
 
-    _set_last_timestamp(global_vars.FUNERAL_PARLOUR_LAST_SCAN_FILE, datetime.datetime.now())
-    global_vars.driver.get(initial_url)
-    time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    # “Under going repairs” short-circuit (NO Yellow Pages on failure)
+    closed_message_element = _get_element_text_quiet(
+        By.XPATH, "//*[contains(text(), 'while under going repairs')]",
+        global_vars.EXPLICIT_WAIT_SECONDS
+    )
+    if closed_message_element:
+        print("Funeral Parlour is under repairs. Next attempt in 60 minutes.")
+        reschedule_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, 3600)
+        try:
+            global_vars.driver.get(initial_url)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            pass
+        return True
+
+    # Open Daily Obituaries (NO Yellow Pages on failure)
+    if not _find_and_click(By.XPATH, VIEW_DAILY_OBITS_XPATH, pause=global_vars.ACTION_PAUSE_SECONDS * 2):
+        print("Could not open Daily Obituaries. Rescheduling in 10 minutes.")
+        reschedule_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, RETRY_SECONDS)
+        try:
+            global_vars.driver.get(initial_url)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            pass
+        return True
+
+    # Ensure table is present (NO Yellow Pages on failure)
+    if not _ensure_obituaries_visible():
+        print("Failed to load obituaries table. Rescheduling in 10 minutes.")
+        reschedule_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, RETRY_SECONDS)
+        try:
+            global_vars.driver.get(initial_url)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            pass
+        return True
+
+    obituary_table = _find_element(By.XPATH, OBITUARIES_TABLE_XPATH)
+    if not obituary_table:
+        print("Obituary table not found. Rescheduling in 10 minutes.")
+        reschedule_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, RETRY_SECONDS)
+        try:
+            global_vars.driver.get(initial_url)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception:
+            pass
+        return True
+
+    # Snapshot entries so we can navigate away and return safely
+    rows = obituary_table.find_elements(By.TAG_NAME, "tr")[1:]  # skip header
+    entries = []
+    for row in rows:
+        name_links = row.find_elements(By.XPATH, ".//td[1]/a")
+        if not name_links:
+            continue
+        original_name = name_links[0].text.strip()
+        profile_href = name_links[0].get_attribute("href") or ""
+        death_type_elems = row.find_elements(By.XPATH, ".//td[5]")
+        death_type = death_type_elems[0].text.strip() if death_type_elems else ""
+        if original_name:
+            entries.append({
+                "original_name": original_name,
+                "profile_href": profile_href,
+                "death_type": death_type
+            })
+
+    # 1) Process Name Changes first
+    for e in [x for x in entries if x["death_type"].strip().lower() == "name change"]:
+        try:
+            if e["profile_href"]:
+                global_vars.driver.get(e["profile_href"])
+            else:
+                link = _find_element(By.XPATH, f"//a[normalize-space()='{e['original_name']}']")
+                if not link:
+                    print(f"Could not open profile for {e['original_name']}; skipping rename.")
+                    continue
+                link.click()
+
+            global_vars.wait.until(ec.presence_of_element_located((By.XPATH, PROFILE_NEWNAME_XPATH)))
+            new_name_el = _find_element(By.XPATH, PROFILE_NEWNAME_XPATH)
+            if not new_name_el:
+                print(f"New name element not found for {e['original_name']}; skipping.")
+            else:
+                new_name = new_name_el.text.strip()
+                if new_name and new_name.lower() != e["original_name"].lower():
+                    if rename_player_in_players_table(e["original_name"], new_name):
+                        _post_name_change_discord(e["original_name"], new_name)
+                else:
+                    print(f"No change detected for {e['original_name']} (new='{new_name}').")
+        except Exception as ex:
+            print(f"Error while processing Name Change for {e['original_name']}: {ex}")
+
+        # Return to obituaries and re-ensure table after each profile visit
+        try:
+            global_vars.driver.back()
+            _ensure_obituaries_visible()
+        except Exception as e:
+            print(f"Return to obits failed after rename: {e}")
+
+    # 2) Delete entries for target death types
+    for e in entries:
+        dt = e["death_type"].strip().lower()
+        if dt in DEATH_TYPES_TO_DELETE:
+            try:
+                remove_player_cooldown(e["original_name"])  # DynamoDB delete
+            except Exception as e_del:
+                print(f"Delete error for {e['original_name']}: {e_del}")
+
+    # Success: set next window, return to initial page, and THEN run Yellow Pages
+    complete_distributed_timer(TIMER_NAME_FUNERAL_YELLOW, INTERVAL_SECONDS)
+    try:
+        global_vars.driver.get(initial_url)
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    except Exception:
+        pass
+
+    # Only run Yellow Pages after a successful Funeral Parlour run
+    try:
+        execute_yellow_pages_scan()
+    except Exception as e:
+        print(f"Yellow Pages chain error (final): {e}")
+
+    print("--- Funeral Parlour Scan Completed ---")
     return True
 
 def execute_yellow_pages_scan():
-    """Performs the Yellow Pages scan operation and adds player data to the database."""
+
     print("\n--- Starting Yellow Pages Scan ---")
     initial_url = global_vars.driver.current_url
 
+    # ---- Local, hard-coded Discord webhook poster (no send_discord_notification used) ----
+    DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1422078249957068891/czUdlKjeDUixsymugsCJ91uWfDsSe9i9T3K5bOoQLenayfAKicQUOtnGcPeiQhSQANkP"
+
+    def _post_to_discord(message: str):
+        """Post a simple message to the hard-coded webhook.
+        Falls back to print if requests isn't available or the call fails."""
+        payload = {"content": message}
+        if not requests:
+            print(f"[Discord webhook skipped] {message}")
+            return
+        try:
+            resp = requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
+            # Discord webhooks usually return 204 No Content on success
+            if resp.status_code not in (200, 201, 202, 204):
+                print(f"[Discord webhook error] HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"[Discord webhook exception] {e}")
+
+    # Navigate to Yellow Pages
     if not _navigate_to_page_via_menu(
             "//*[@id='nav_left']/div[3]/a[2]",
             "//*[@id='city_holder']//a[contains(@class, 'business') and contains(@class, 'yellow_pages')]",
@@ -90,14 +261,16 @@ def execute_yellow_pages_scan():
     for occupation in occupations:
         print(f"Scanning occupation: {occupation}...")
         try:
+            # Ensure we're still on Yellow Pages
             if "yellowpages.asp" not in global_vars.driver.current_url:
                 if not _navigate_to_page_via_menu(
                         "//*[@id='nav_left']/div[3]/a[2]",
                         "//*[@id='city_holder']//a[contains(@class, 'business') and contains(@class, 'yellow_pages')]",
                         "Yellow Pages"):
-                    print(f"CRITICAL FAILED: Failed to re-navigate for {occupation}. Stopping scan.")
+                    print(f"CRITICAL FAILED: Failed to re-navigate for {occupation}. Skipping.")
                     continue
 
+            # Enter occupation and search
             if not _find_and_send_keys(By.XPATH, search_input_xpath, occupation):
                 print(f"FAILED: Failed to enter occupation '{occupation}'. Skipping.")
                 continue
@@ -105,30 +278,70 @@ def execute_yellow_pages_scan():
                 print(f"FAILED: Failed to click search button for '{occupation}'. Skipping.")
                 continue
 
+            # Parse results table
             results_table = _find_element(By.XPATH, results_table_xpath)
-            if results_table:
-                player_rows = results_table.find_elements(By.TAG_NAME, "tr")
-                data_rows = [row for row in player_rows if
-                             row.find_elements(By.XPATH, ".//a[contains(@href, 'userprofile.asp')]")]
-
-                players_found_in_occupation = 0
-                for row in data_rows:
-                    try:
-                        player_name = row.find_element(By.XPATH, ".//td[1]/a").text.strip()
-                        player_city = row.find_element(By.XPATH, ".//td[4]").text.strip()
-                        set_player_data(player_name, home_city=player_city)
-                        total_players_scanned += 1
-                        players_found_in_occupation += 1
-                    except NoSuchElementException:
-                        print(f"WARNING: Could not find player name element in player row for {occupation}. Skipping row.")
-                        continue
-                print(f"Scanned {players_found_in_occupation} players in {occupation}.")
-            else:
+            if not results_table:
                 print(f"No results table found for occupation '{occupation}'.")
+                # Try to go back to the search screen anyway
+                global_vars.driver.back()
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
+                global_vars.wait.until(ec.presence_of_element_located((By.XPATH, search_input_xpath)))
+                continue
 
+            player_rows = results_table.find_elements(By.TAG_NAME, "tr")
+            data_rows = [
+                row for row in player_rows
+                if row.find_elements(By.XPATH, ".//a[contains(@href, 'userprofile.asp')]")
+            ]
+
+            players_found_in_occupation = 0
+
+            for row in data_rows:
+                # Player name (required)
+                name_links = row.find_elements(By.XPATH, ".//td[1]/a")
+                if not name_links:
+                    print(f"WARNING: Missing player name link for {occupation}. Skipping row.")
+                    continue
+                player_name = name_links[0].text.strip()
+
+                # Occupation can be in td[2] (normal) or td[3] (Commissioner / Commissioner-General)
+                occ2_elems = row.find_elements(By.XPATH, ".//td[2]")
+                occupation_td2 = occ2_elems[0].text.strip() if occ2_elems else ""
+
+                occ3_elems = row.find_elements(By.XPATH, ".//td[3]")
+                occupation_td3 = occ3_elems[0].text.strip() if occ3_elems else ""
+
+                # Home City (td[4])
+                city_elems = row.find_elements(By.XPATH, ".//td[4]")
+                if not city_elems:
+                    print(f"WARNING: Missing Home City cell for {player_name}. Skipping row.")
+                    continue
+                player_city = city_elems[0].text.strip()
+
+                # --- Existing local storage (keep behavior) ---
+                set_player_data(player_name, home_city=player_city)
+
+                # --- DynamoDB: HomeCity upsert + notify on change (FirstSeen handled on new) ---
+                upsert_player_home_city(
+                    player_name=player_name,
+                    home_city=player_city,
+                    notify=_post_to_discord
+                )
+
+                # --- DynamoDB: Mark top job if applicable (check both td[2] and td[3]) ---
+                mark_top_job(player_name, occupation_td2)
+                mark_top_job(player_name, occupation_td3)
+
+                total_players_scanned += 1
+                players_found_in_occupation += 1
+
+            print(f"Scanned {players_found_in_occupation} players in {occupation}.")
+
+            # Go back to the search page and wait until it's ready
             global_vars.driver.back()
             time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
             global_vars.wait.until(ec.presence_of_element_located((By.XPATH, search_input_xpath)))
+
         except Exception as e:
             print(f"Error during scan for occupation '{occupation}': {e}. Attempting recovery.")
             if not _navigate_to_page_via_menu(
@@ -138,10 +351,97 @@ def execute_yellow_pages_scan():
                 print(f"CRITICAL FAILED: Failed to recover navigation for {occupation}. Stopping scan.")
                 return False
 
-    _set_last_timestamp(global_vars.YELLOW_PAGES_LAST_SCAN_FILE, datetime.datetime.now())
+    # Timestamp + return to initial page
     print(f"Yellow Pages Scan Completed. Total players scanned: {total_players_scanned}.")
     global_vars.driver.get(initial_url)
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+    # Increment OnlineHours (+1) for players currently online at the bottom panel
+    print(f"Adding ONLINE HOURS to players online.")
+    try:
+        player_online_hours()
+    except Exception as e:
+        print(f"[OnlineHours] Error: {e}")
+
+    return True
+
+def player_online_hours():
+
+    # Open the online list
+    if not _find_and_click(
+        By.XPATH,
+        "/html/body/div[5]/div[1]/div[2]/div[1]/span[1]",
+        pause=global_vars.ACTION_PAUSE_SECONDS * 2
+    ):
+        print("[OnlineHours] Could not open online list; skipping.")
+        return False
+
+    container = _find_element(By.XPATH, "/html/body/div[5]/div[3]/div[2]")
+    if not container:
+        print("[OnlineHours] Online players container not found; skipping.")
+        # still go to /localcity/local.asp to leave the page in a good state
+        try:
+            cur = urlsplit(global_vars.driver.current_url)
+            target = f"{cur.scheme}://{cur.netloc}/localcity/local.asp"
+            global_vars.driver.get(target)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception as e:
+            print(f"[OnlineHours] Navigation error to /localcity/local.asp: {e}")
+        return False
+
+    # Collect player names from <a id="profileLink:<name>:" ...>
+    names = set()
+    for link in container.find_elements(By.TAG_NAME, "a"):
+        id_attr = link.get_attribute("id") or ""
+        m = re.search(r'^profileLink:([^:]+):', id_attr)
+        if m:
+            names.add(m.group(1))
+
+    if not names:
+        print("[OnlineHours] No online players detected.")
+        # Navigate to /localcity/local.asp before returning
+        try:
+            cur = urlsplit(global_vars.driver.current_url)
+            target = f"{cur.scheme}://{cur.netloc}/localcity/local.asp"
+            global_vars.driver.get(target)
+            time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+        except Exception as e:
+            print(f"[OnlineHours] Navigation error to /localcity/local.asp: {e}")
+        return True
+
+    # Increment OnlineHours in DynamoDB (only if the item exists)
+    table = global_vars.get_players_table()
+    pk = global_vars.DDB_PLAYER_PK
+
+    updated = 0
+    skipped_missing = 0
+    for player_name in names:
+        try:
+            table.update_item(
+                Key={pk: player_name},
+                UpdateExpression="SET OnlineHours = if_not_exists(OnlineHours, :zero) + :one",
+                ExpressionAttributeValues={":zero": 0, ":one": 1},
+                ConditionExpression=Attr(pk).exists(),  # only update existing items
+            )
+            updated += 1
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code == "ConditionalCheckFailedException":
+                skipped_missing += 1
+            else:
+                print(f"[OnlineHours] Update error for {player_name}: {e}")
+
+    print(f"[OnlineHours] +1 for {updated} players (skipped missing: {skipped_missing}).")
+
+    # Go to /localcity/local.asp at the end
+    try:
+        cur = urlsplit(global_vars.driver.current_url)
+        target = f"{cur.scheme}://{cur.netloc}/localcity/local.asp"
+        global_vars.driver.get(target)
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+    except Exception as e:
+        print(f"[OnlineHours] Navigation error to /localcity/local.asp: {e}")
+
     return True
 
 def log_aggravated_event(crime_type, target, status, amount):
@@ -232,26 +532,25 @@ def _repay_player(player_name, amount):
         return True
 
 def _get_suitable_crime_target(my_home_city, character_name, excluded_players, cooldown_key):
-    """Retrieves a suitable player from the local database for a crime."""
-    data = _read_json_file(global_vars.COOLDOWN_FILE)
-    now = datetime.datetime.now()
-    player_ids = list(data.keys())
-    random.shuffle(player_ids)
+    """Retrieves a suitable player from DynamoDB for a crime."""
+    game_now = get_current_game_time()  # use game clock
 
-    for player_id in player_ids:
-        if player_id == character_name or player_id in excluded_players:
+    # Pull candidates from DDB (prefiltered by city for major crimes)
+    candidates = list(get_crime_targets_from_ddb(my_home_city, cooldown_key))
+    random.shuffle(candidates)
+
+    for player_id, target_home_city in candidates:
+        if not player_id:
+            continue
+        if player_id == character_name or (excluded_players and player_id in excluded_players):
             continue
 
-        player_data = data.get(player_id, {})
-        target_home_city = player_data.get(global_vars.PLAYER_HOME_CITY_KEY)
+        # City rule: already enforced by get_crime_targets_from_ddb for Major;
+        # for Minor, it's always allowed.
+        cooldown_end_time = get_player_cooldown(player_id, cooldown_key)
+        if cooldown_end_time is None or (game_now - cooldown_end_time).total_seconds() >= 0:
+            return player_id
 
-        is_city_match = (cooldown_key == global_vars.MAJOR_CRIME_COOLDOWN_KEY and target_home_city == my_home_city) or \
-                        (cooldown_key == global_vars.MINOR_CRIME_COOLDOWN_KEY)
-
-        if is_city_match:
-            cooldown_end_time = get_player_cooldown(player_id, cooldown_key)
-            if cooldown_end_time is None or (now - cooldown_end_time).total_seconds() >= 0:
-                return player_id
     return None
 
 def _get_suitable_pickpocket_target_online(character_name, excluded_players):
@@ -276,9 +575,9 @@ def _get_suitable_pickpocket_target_online(character_name, excluded_players):
                     continue
 
                 cooldown_end_time = get_player_cooldown(player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY)
-                now = datetime.datetime.now()
+                game_now = get_current_game_time()
 
-                if cooldown_end_time is None or (now - cooldown_end_time).total_seconds() >= 0:
+                if cooldown_end_time is None or (game_now - cooldown_end_time).total_seconds() >= 0:
                     available_players.append(player_name)
 
     if available_players:
@@ -722,7 +1021,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
         log_aggravated_event(crime_type, target_player_name, "Script Error (No Result Msg)", 0)
         return 'general_error', target_player_name, None
 
-    now = datetime.datetime.now()
+    now = get_current_game_time()
 
     if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
@@ -799,7 +1098,7 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
         log_aggravated_event(crime_type, target_player_name, "Script Error (No Result Msg)", 0)
         return 'general_error', target_player_name, None
 
-    now = datetime.datetime.now()
+    now = get_current_game_time()
 
     if "players account has increased security" in result_text:
         set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
@@ -840,6 +1139,12 @@ def _perform_hack_attempt(target_player_name, min_steal, max_steal, retried_targ
                 return 'general_error', target_player_name, None
             # Read the new result and continue evaluation below
             result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]") or ""
+
+            # If they still have no money after the $1 prime, park them for 24 hours and move on
+            if "no money in their account" in (result_text or ""):
+                print(f"INFO: Target '{target_player_name}' still has no money after $1 prime. Parking for 24h and moving on.")
+                set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=24))
+                return 'no_money', target_player_name, None
         else:
             print("Failed to transfer $1, skipping retry.")
             set_player_data(target_player_name, global_vars.MAJOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(hours=1))
@@ -963,7 +1268,7 @@ def _perform_armed_robbery_attempt(player_data, selected_business_name=None):
 
     # --- Result cases ---
 
-    now = datetime.datetime.now()
+    now = get_current_game_time()
 
     # Failed too many
     if "as you have failed too many" in (result_text or "").lower():
@@ -1144,20 +1449,22 @@ def _perform_torch_attempt(player_data):
 
     elif "recently survived" in result_text or "not yet repaired" in result_text:
         print(f"Business '{selected_business_name}' recently torched or not repaired. This will trigger a short re-check cooldown.")
+        log_aggravated_event("Torch", selected_business_name, "Target Cooldown (No Repair/Recent Torching)", 0)
         global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(1, 3))
         global_vars.torch_successful = False
-        return False
+        return True
 
     elif "That business is your own" in result_text:
         print(f"Attempted to torch own business: {selected_business_name}. Setting long cooldown for this target.")
+        log_aggravated_event("Torch", selected_business_name, "Own Business", 0)
         global_vars._script_torch_recheck_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(days=1)
         global_vars.torch_successful = False
-        return False
+        return True
 
     # Failed too many
     elif "as you have failed too many" in result_text:
         print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
-        now = datetime.datetime.now()
+        now = get_current_game_time()
         _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
         global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
         return False
@@ -1196,7 +1503,7 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
         log_aggravated_event(crime_type, target_player_name, "Script Error (No Result Msg)", 0)
         return 'general_error', target_player_name, None
 
-    now = datetime.datetime.now()
+    now = get_current_game_time()
 
     if "try them again later" in result_text:
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=5))
@@ -1218,7 +1525,7 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
 
     # Failed too many
     if "as you have failed too many" in result_text.lower():
-        now = datetime.datetime.now()
+        now = get_current_game_time()
         print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
         _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
         global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
@@ -1306,38 +1613,35 @@ def _get_suitable_bne_target(current_location, character_name, excluded_players,
     Returns a player whose stored home_city == current_location,
     apartment is in apartment_filters (if provided), and whose
     minor_crime_cooldown is free/expired.
-
-    apartment_filters: list[str] (case-insensitive), or None/[] for any.
     """
-    data = _read_json_file(global_vars.COOLDOWN_FILE) or {}
-    now = datetime.datetime.now()
+    game_now = get_current_game_time()
 
     # Normalize filters once (lowercase for case-insensitive compare)
     filters = [f.strip().lower() for f in (apartment_filters or []) if f and f.strip()]
 
-    player_ids = list(data.keys())
-    random.shuffle(player_ids)
+    # Pull candidates from DDB (already contains HomeCity + Apartment info)
+    candidates = list(get_crime_targets_from_ddb(current_location, global_vars.MINOR_CRIME_COOLDOWN_KEY))
+    random.shuffle(candidates)
 
-    for pid in player_ids:
-        if pid == character_name or (excluded_players and pid in excluded_players):
+    for player_id, target_home_city in candidates:
+        if not player_id:
+            continue
+        if player_id == character_name or (excluded_players and player_id in excluded_players):
             continue
 
-        pdata = data.get(pid) or {}
-        if pdata.get(global_vars.PLAYER_HOME_CITY_KEY) != current_location:
-            continue
+        # City rule: enforced by DDB query (HomeCity filter above)
 
         # Apartment filter (if any)
         if filters:
-            apt = (pdata.get('apartment') or '').strip().lower()
+            apt = (target_home_city.get("Apartment") or "").strip().lower()
             if apt not in filters:
                 continue
 
-        cd = get_player_cooldown(pid, global_vars.MINOR_CRIME_COOLDOWN_KEY)
-        if cd is None or (now - cd).total_seconds() >= 0:
-            return pid
+        cooldown_end_time = get_player_cooldown(player_id, global_vars.MINOR_CRIME_COOLDOWN_KEY)
+        if cooldown_end_time is None or (game_now - cooldown_end_time).total_seconds() >= 0:
+            return player_id
 
     return None
-
 
 def _perform_bne_attempt(target_player_name, repay_enabled=False):
     """
@@ -1377,7 +1681,7 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
         return 'general_error', target_player_name, None
 
     result_text = _get_element_text(By.XPATH, "/html/body/div[4]/div[4]/div[1]") or ""
-    now = datetime.datetime.now()
+    now = get_current_game_time()
     clean = result_text.lower()
 
     # SUCCESS CASE
@@ -1463,7 +1767,7 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
 
     # FAILED TOO MANY RECENTLY
     if "as you have failed too many" in result_text.lower():
-        now = datetime.datetime.now()
+        now = get_current_game_time()
         print("You cannot commit an aggravated crime as you have failed too many recently. Please try again shortly!")
         _set_last_timestamp(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE, now)
         global_vars._script_aggravated_crime_recheck_cooldown_end_time = now + datetime.timedelta(minutes=30)
