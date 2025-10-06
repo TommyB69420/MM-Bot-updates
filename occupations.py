@@ -5,9 +5,10 @@ import time
 from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
+from boto3.dynamodb.conditions import Attr
 import global_vars
 from aws_botusers import get_bankers_by_city
-from aws_players import get_players_with_other_home_cities, upsert_player_home_city
+from aws_players import upsert_player_home_city
 from comms_journals import send_discord_notification
 from database_functions import _read_json_file, remove_player_cooldown, set_player_data
 from helper_functions import _find_and_send_keys, _find_and_click, _find_element, _navigate_to_page_via_menu, \
@@ -825,8 +826,50 @@ def banker_add_clients(current_player_home_city=None):
         return False
     current_player_home_city = current_player_home_city.strip()
 
-    # Get potential clients from DDB (players whose HomeCity differs from ours)
-    potential_clients = get_players_with_other_home_cities(current_player_home_city)
+    # Get potential clients from DDB (players whose HomeCity differs from ours, excluding Hell/Heaven)
+    potential_clients = []
+    try:
+        players_tbl = global_vars.get_players_table()
+
+        filt = (
+                Attr("HomeCity").exists() &
+                Attr("HomeCity").ne(current_player_home_city) &
+                Attr("HomeCity").ne("Hell") &
+                Attr("HomeCity").ne("Heaven")
+        )
+
+        # Only need the Player name and HomeCity for filtering/reporting
+        projection = "#pk, HomeCity"
+        expr_names = {"#pk": global_vars.DDB_PLAYER_PK}
+
+        scan_kwargs = {
+            "FilterExpression": filt,
+            "ProjectionExpression": projection,
+            "ExpressionAttributeNames": expr_names,
+        }
+
+        # Paginated scan
+        resp = players_tbl.scan(**scan_kwargs)
+        items = resp.get("Items", [])
+        for it in items:
+            pk = it.get(global_vars.DDB_PLAYER_PK)
+            city = (it.get("HomeCity") or "")
+            if pk and city.lower() not in {"hell", "heaven"}:
+                potential_clients.append(pk)
+
+        while "LastEvaluatedKey" in resp:
+            resp = players_tbl.scan(ExclusiveStartKey=resp["LastEvaluatedKey"], **scan_kwargs)
+            items = resp.get("Items", [])
+            for it in items:
+                pk = it.get(global_vars.DDB_PLAYER_PK)
+                city = (it.get("HomeCity") or "")
+                if pk and city.lower() not in {"hell", "heaven"}:
+                    potential_clients.append(pk)
+
+    except Exception as e:
+        print(f"ERROR: DynamoDB scan for Player table failed: {e}")
+        global_vars._script_bank_add_clients_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 180))
+        return False
 
     if not potential_clients:
         print("No potential clients found with a different home city.")
