@@ -6,6 +6,8 @@ from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
 import global_vars
+from aws_botusers import get_bankers_by_city
+from aws_players import get_players_with_other_home_cities, upsert_player_home_city
 from comms_journals import send_discord_notification
 from database_functions import _read_json_file, remove_player_cooldown, set_player_data
 from helper_functions import _find_and_send_keys, _find_and_click, _find_element, _navigate_to_page_via_menu, \
@@ -219,7 +221,19 @@ def laundering(player_data):
     target_link = None
     fallback_link = None
 
-    # Scan rows for preferred/fallback launderer
+    # Laundering Boys Work: pick any bot user banker whose HomeCity == current city
+    current_city = (player_data.get("Location") or player_data.get("Home City") or "").strip()
+    banker_priority = set()
+    if current_city:
+        banker_priority = get_bankers_by_city(current_city)
+        if banker_priority:
+            print(f"Laundering Boys Work is active in {current_city}: {sorted(list(banker_priority))}")
+        else:
+            print(f"No banker bot users in {current_city}; using normal preference order.")
+    else:
+        print("Unknown current city; skipping banker override.")
+
+    # Scan rows for banker override, then preferred, then anyone
     for row in rows:
         try:
             link = row.find_element(By.XPATH, ".//td[1]/a")
@@ -228,13 +242,19 @@ def laundering(player_data):
                 continue
             lname = name.lower()
 
-            # If preferred launderer is found; stop here
+            # 1) Launder with bot users first
+            if lname in banker_priority:
+                target_link = link
+                print(f"[Launder] Choosing banker bot user in {current_city}: {name}")
+                break
+
+            # 2) Preferred launderer second
             if lname in preferred:
                 target_link = link
                 print(f"Preferred launderer: {name}")
                 break
 
-            # If no preferred found yet, keep track of the first available one
+            # 3) First available fallback
             if fallback_link is None:
                 fallback_link = link
                 print(f"Set first available launderer as fallback: {name}")
@@ -275,8 +295,13 @@ def laundering(player_data):
 
     max_amt = int(m.group(1).replace(",", ""))
 
-    # Launder only what fits under (dirty – reserve) and contact’s max
-    amt = min(max_amt, dirty - reserve)
+    if dirty > reserve:
+        # Normal laundering: clean as much as possible under reserve and max
+        amt = min(max_amt, dirty - reserve)
+    else:
+        # Already at or below reserve: trickle $5 each time (if dirty cash allows)
+        amt = min(max_amt, 5)
+
     if amt <= 0:
         print(f"Nothing to launder (dirty ${dirty}, reserve ${reserve}, max ${max_amt}).")
         global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(300, 600))
@@ -315,7 +340,7 @@ def medical_casework(player_data):
         "Hospital"
     ):
         print("FAILED: Could not navigate to Hospital via menu. Setting cooldown.")
-        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 180))
+        global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120))
         return False
 
     # If the Hospital is torched/under repair, the page usually shows a #fail block.
@@ -324,17 +349,16 @@ def medical_casework(player_data):
         fail_html = _get_element_attribute(By.ID, "fail", "innerHTML") or ""
         if "under going repairs" in (fail_html or "").lower():
             print("Hospital is under repairs. Backing off.")
-            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(5, 7))
+            global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120))
             return False
 
     # Click the PATIENTS tab before scanning for work
-    if not _find_and_click(By.XPATH, "/html/body/div[4]/div[4]/center/div[1]/form/div/div/table/tbody/tr[1]/td[1]/a"):
+    if not _find_and_click(By.XPATH, "//a[normalize-space()='PATIENTS']"):
         print("FAILED: Could not click 'PATIENTS' tab. Aborting medical casework.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120))
         return False
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
-
-    print("SUCCESS: On PATIENTS page. Checking for casework...")
+    print("Clicked on Patients. Checking for casework...")
 
     # Ensure the table with casework options is visible
     table_xpath = "//*[@id='holder_table']/form/div[@id='holder_content']/center/table"
@@ -801,26 +825,8 @@ def banker_add_clients(current_player_home_city=None):
         return False
     current_player_home_city = current_player_home_city.strip()
 
-    # Read the aggravated_crime_cooldowns.json file
-    cooldowns_data = _read_json_file(global_vars.COOLDOWN_FILE)
-    potential_clients = []
-
-    # Identify players with a home city that is NOT the bot's home city
-    for player_id, player_data_from_db in (cooldowns_data or {}).items():
-        db_player_home_city = player_data_from_db.get(global_vars.PLAYER_HOME_CITY_KEY)
-        if not isinstance(db_player_home_city, str) or not db_player_home_city.strip():
-            continue
-
-        city = db_player_home_city.strip()
-        # Exclude players from the same home city or from 'Hell'/'Heaven'
-        lc = city.lower()
-        if lc == current_player_home_city.lower():
-            continue
-        if lc in {"hell", "heaven"}:
-            continue
-
-        # Passed all filters — add to potential clients
-        potential_clients.append(player_id)
+    # Get potential clients from DDB (players whose HomeCity differs from ours)
+    potential_clients = get_players_with_other_home_cities(current_player_home_city)
 
     if not potential_clients:
         print("No potential clients found with a different home city.")
@@ -905,12 +911,10 @@ def banker_add_clients(current_player_home_city=None):
                 fail_results = _get_element_attribute(By.ID, "fail", "innerHTML") or ""
                 fl = fail_results.lower()
                 if 'appear to exist' in fl:
-                    print(f"INFO: Client '{client_to_add}' does not appear to exist (dead/removed). Removing from database.")
-                    remove_player_cooldown(client_to_add)
+                    print(f"INFO: Client '{client_to_add}' does not appear to exist (dead/removed). Skipping.")
                 elif 'from your home city' in fl:
-                    print(f"INFO: Client '{client_to_add}' is from your home city.")
-                    # ensure we persist a string
-                    set_player_data(client_to_add, home_city=current_player_home_city)
+                    print(f"INFO: Client '{client_to_add}' is from your home city. Upserting HomeCity in DDB and skipping.")
+                    upsert_player_home_city(client_to_add, current_player_home_city)
                 elif 'already do business' in fl:
                     print(f"INFO: You already do business with '{client_to_add}'. Skipping.")
                 else:

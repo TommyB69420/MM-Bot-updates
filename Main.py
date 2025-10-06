@@ -509,8 +509,7 @@ while True:
     })
 
     # Periodically mark any stale users offline (no-op if called too soon)
-    mark_stale_bot_users_offline(max_age_seconds=180)  # ~3 min online window
-
+    mark_stale_bot_users_offline(heartbeat_secs=60, misses_required=3)  # ~3 min online window
 
     # Read enabled configs.
     enabled_configs = get_enabled_configs(location, occupation, home_city, rank, next_rank_pct)

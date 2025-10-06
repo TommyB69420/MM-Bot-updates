@@ -302,7 +302,16 @@ def set_player_data(player_id: str, cooldown_type: str | None = None, cooldown_e
     update_expr = "SET " + ", ".join(update_expr_parts)
 
     try:
-        print(f"[DDB] set_player_data PK={player_id} expr={update_expr} values={eav}")
+        # Build a human-readable updates string
+        updates = []
+        if ":cd" in eav:
+            updates.append(f"{update_expr.split('=')[0].strip()} → {eav[':cd']}")
+        if ":hc" in eav:
+            updates.append(f"HomeCity → {eav[':hc']}")
+        if ":apt" in eav:
+            updates.append(f"Apartment → {eav[':apt']}")
+
+        print(f"[DDB] Player '{player_id}' updated with {', '.join(updates)}")
         table.update_item(
             Key={pk: player_id},
             UpdateExpression=update_expr,

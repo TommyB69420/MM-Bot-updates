@@ -353,7 +353,7 @@ def prepare_police_cases(character_name):
         else:
             print("All cases have orange boxes — waiting before re-check.")
 
-        mins = random.uniform(5, 7)
+        mins = random.uniform(2, 3)
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=mins)
         return True
 

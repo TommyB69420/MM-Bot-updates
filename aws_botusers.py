@@ -72,14 +72,15 @@ def upsert_bot_user_snapshot(snap: Dict[str, Any]) -> bool:
         print(f"[DDB] upsert_bot_user_snapshot error: {e}")
         return False
 
-def mark_stale_bot_users_offline(max_age_seconds: int = 180) -> None:
+def mark_stale_bot_users_offline(heartbeat_secs: int = 60, misses_required: int = 2) -> None:
     """
-    Marks IsOnline = False for any BotUsers last seen > max_age_seconds ago.
-    Throttled to run at most once every ~60 seconds per process.
+    Marks IsOnline = False only after we've missed N heartbeats.
+    Example: heartbeat=60s, misses=2 → offline after ~120s.
+    Throttled to run at most once every ~30 seconds per process.
     """
     global _last_bot_users_sweep_epoch
     now = int(dt.datetime.utcnow().timestamp())
-    if now - _last_bot_users_sweep_epoch < 60:
+    if now - _last_bot_users_sweep_epoch < 30:
         return  # throttle
 
     _last_bot_users_sweep_epoch = now
@@ -88,46 +89,74 @@ def mark_stale_bot_users_offline(max_age_seconds: int = 180) -> None:
         tbl = get_bot_users_table()
         pk  = DDB_BOT_USERS_PK
 
-        # Read minimal columns to keep scans cheap
-        resp = tbl.scan(ProjectionExpression=f"{pk}, LastSeenSeconds, IsOnline")
-        items = resp.get("Items", []) or []
+        projection = f"{pk}, LastSeenSeconds, IsOnline"
+        resp = tbl.scan(ProjectionExpression=projection)
 
-        stale_before = now - max_age_seconds
+        offline_after = heartbeat_secs * max(1, int(misses_required))
 
-        def mark_offline(name: str):
-            try:
-                tbl.update_item(
-                    Key={pk: name},
-                    UpdateExpression="SET IsOnline = :off",
-                    ExpressionAttributeValues={":off": False},
-                )
-            except Exception as e:
-                print(f"[DDB] Failed to mark offline {name}: {e}")
-
-        # First page
-        for item in items:
-            name = item.get(pk)
-            if not name:
-                continue
-            last_seen = int(item.get("LastSeenSeconds") or 0)
-            is_online = bool(item.get("IsOnline", False))
-            if last_seen < stale_before and is_online:
-                mark_offline(name)
-
-        # Sequence the order if needed
-        while resp.get("LastEvaluatedKey"):
-            resp = tbl.scan(
-                ProjectionExpression=f"{pk}, LastSeenSeconds, IsOnline",
-                ExclusiveStartKey=resp["LastEvaluatedKey"],
-            )
-            for item in (resp.get("Items", []) or []):
+        while True:
+            items = resp.get("Items", []) or []
+            for item in items:
                 name = item.get(pk)
                 if not name:
                     continue
+
                 last_seen = int(item.get("LastSeenSeconds") or 0)
                 is_online = bool(item.get("IsOnline", False))
-                if last_seen < stale_before and is_online:
-                    mark_offline(name)
+                age = now - last_seen if last_seen else 10**9  # treat missing as very old
+
+                if is_online and age >= offline_after:
+                    try:
+                        tbl.update_item(
+                            Key={pk: name},
+                            UpdateExpression="SET IsOnline = :off",
+                            ExpressionAttributeValues={":off": False},
+                        )
+                    except Exception as e:
+                        print(f"[DDB] Failed to mark offline {name}: {e}")
+
+            lek = resp.get("LastEvaluatedKey")
+            if not lek:
+                break
+
+            resp = tbl.scan(ProjectionExpression=projection, ExclusiveStartKey=lek)
 
     except Exception as e:
         print(f"[DDB] BotUsers offline sweep error: {e}")
+
+def get_bankers_by_city(city: str) -> set[str]:
+    """
+    Returns a set of PlayerName (lowercase) for bot users whose Occupation is in banking
+    and whose HomeCity matches the given city (case-insensitive).
+    This is the helper function that automatically launders with other bot users
+    """
+    bankers = set()
+    if not city:
+        return bankers
+
+    try:
+        tbl = get_bot_users_table()
+        banker_titles = {"bank teller", "loan officer", "bank manager"}
+        city_lc = city.strip().lower()
+
+        # Initial scan
+        resp = tbl.scan(ProjectionExpression=f"{DDB_BOT_USERS_PK}, Occupation, HomeCity")
+
+        while True:
+            for item in resp.get("Items", []) or []:
+                name = (item.get(DDB_BOT_USERS_PK) or "").strip()
+                occ = (item.get("Occupation") or "").strip().lower()
+                home_city = (item.get("HomeCity") or "").strip().lower()
+
+                if name and (occ in banker_titles or "bank" in occ) and home_city == city_lc:
+                    bankers.add(name.lower())
+
+            if "LastEvaluatedKey" in resp:
+                resp = tbl.scan(ProjectionExpression=f"{DDB_BOT_USERS_PK}, Occupation, HomeCity", ExclusiveStartKey=resp["LastEvaluatedKey"],)
+            else:
+                break
+
+    except Exception as e:
+        print(f"[DDB] get_bankers_by_city error: {e}")
+
+    return bankers
