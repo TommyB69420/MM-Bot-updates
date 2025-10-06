@@ -10,7 +10,6 @@ import global_vars
 from aws_botusers import get_bankers_by_city
 from aws_players import upsert_player_home_city
 from comms_journals import send_discord_notification
-from database_functions import _read_json_file, remove_player_cooldown, set_player_data
 from helper_functions import _find_and_send_keys, _find_and_click, _find_element, _navigate_to_page_via_menu, \
     _get_element_text, _get_element_attribute, _find_elements, _get_current_url, blind_eye_queue_count, \
     _get_dropdown_options, _select_dropdown_option, dequeue_blind_eye, _find_elements_quiet, dequeue_funeral_smuggle, \
@@ -811,8 +810,8 @@ def banker_laundering():
 def banker_add_clients(current_player_home_city=None):
     """
     Manages the process of adding new clients as a Banker.
-    Reads aggravated_crime_cooldowns.json to find potential clients
-    (players with a home city different from the bot's home city).
+    Reads the Players table in DynamoDB to find potential clients
+    (players with a HomeCity different from the bot's Home City).
     Accepts either the full initial_player_data dict or just the Home City string.
     """
     print("\n--- Beginning Banker Add Clients Operation ---")
