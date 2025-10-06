@@ -353,7 +353,7 @@ def medical_casework(player_data):
             return False
 
     # Click the PATIENTS tab before scanning for work
-    if not _find_and_click(By.XPATH, "//a[normalize-space()='PATIENTS']"):
+    if not _find_and_click(By.XPATH, "/html/body/div[4]/div[4]/center/div[1]/form/div/div/table/tbody/tr[1]/td[1]/a"):
         print("FAILED: Could not click 'PATIENTS' tab. Aborting medical casework.")
         global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(60, 120))
         return False
