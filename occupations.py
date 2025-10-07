@@ -196,14 +196,7 @@ def laundering(player_data):
 
     # Skip if dirty money is not above reserve, unless banker override exists
     if dirty <= reserve:
-        current_city = (player_data.get("Location") or player_data.get("Home City") or "").strip()
-        banker_priority = get_bankers_by_city(current_city) if current_city else set()
-        if not banker_priority:
-            print(f"Skip: dirty ${dirty} ≤ reserve ${reserve}. (no banker override)")
-            global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(200, 300))  # 5–10 min backoff
-            return False
-        else:
-            print(f"Dirty ${dirty} ≤ reserve ${reserve}, but banker override found → continue with $5 trickle")
+        print(f"Dirty money: ${dirty}. Reserve: ${reserve}. Trickling laundering $5")
 
     # Navigate via Income → Money Laundering
     if not _navigate_to_page_via_menu(
@@ -227,7 +220,7 @@ def laundering(player_data):
     fallback_link = None
 
     # Laundering Bot Users work: pick any bot user banker whose HomeCity == current city
-    current_city = (player_data.get("Location") or player_data.get("Home City") or "").strip()
+    current_city = (player_data.get("Location") or "").strip()
     banker_priority = set()
     if current_city:
         banker_priority = get_bankers_by_city(current_city)
@@ -301,11 +294,11 @@ def laundering(player_data):
     max_amt = int(m.group(1).replace(",", ""))
 
     if dirty > reserve:
-        # Normal laundering: clean as much as possible under reserve and max
+        # Normal laundering: clean as much as possible under reserve
         amt = min(max_amt, dirty - reserve)
     else:
-        # Already at or below reserve: trickle $5 each time (if dirty cash allows)
-        amt = min(max_amt, 5)
+        # If already at or below reserve: trickle $5 each time (only if dirty >= 5)
+        amt = 5 if dirty >= 5 else 0
 
     if amt <= 0:
         print(f"Nothing to launder (dirty ${dirty}, reserve ${reserve}, max ${max_amt}).")
