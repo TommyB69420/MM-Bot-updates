@@ -31,7 +31,6 @@ def _row_to_item(row: Dict) -> Dict:
         "OnlineUsers": row.get("online_users", []),   # list of usernames
     }
 
-
 def bulk_upsert_911(rows: List[Dict]) -> int:
     """
     Upserts all provided 911 rows into the DynamoDB table '911'.
@@ -56,7 +55,6 @@ def bulk_upsert_911(rows: List[Dict]) -> int:
         print(f"[DynamoDB] bulk_upsert_911 failed: {e}")
     return ok
 
-
 def get_911_item_by_time_victim(time_str: str, victim_str: str) -> Optional[Dict]:
     """
     Fetch a single 911 row by composite key (Time, Victim).
@@ -68,7 +66,8 @@ def get_911_item_by_time_victim(time_str: str, victim_str: str) -> Optional[Dict
         # Primary: exact composite-key lookup
         resp = TABLE_911.get_item(
             Key={"Time": time_str, "Victim": victim_str},
-            ProjectionExpression="Time, Victim, Crime, Suspect, OnlineUsers",
+            ExpressionAttributeNames={"#T": "Time"},
+            ProjectionExpression="#T, Victim, Crime, Suspect, OnlineUsers",
         )
         item = resp.get("Item")
         if item:
@@ -77,7 +76,8 @@ def get_911_item_by_time_victim(time_str: str, victim_str: str) -> Optional[Dict
         # Fallback: if victim casing/spaces differ, query by Time and match victim loosely
         q = TABLE_911.query(
             KeyConditionExpression=Key("Time").eq(time_str),
-            ProjectionExpression="Time, Victim, Crime, Suspect, OnlineUsers",
+            ExpressionAttributeNames={"#T": "Time"},
+            ProjectionExpression="#T, Victim, Crime, Suspect, OnlineUsers",
         )
         v_norm = victim_str.strip().lower()
         for it in q.get("Items", []):

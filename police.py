@@ -634,14 +634,16 @@ def _search_phonebook_by_ending(ending, crime_time_str: str | None = None, requi
                             "//td[@class='title' and (contains(normalize-space(),'Last online') or contains(normalize-space(),'Last activity'))]"
                             "/following-sibling::td[1]"
                         ) or ""
-                        lower_txt = last_txt.lower()
-                        if "minute" in lower_txt:
-                            last_dt = datetime.datetime.now()
+                        lower_txt = (last_txt or "").lower()
+                        # If the profile shows a relative, very recent activity string, treat it as AFTER the crime.
+                        if any(tok in lower_txt for tok in ("second", "minute")):
+                            keep = True
                         else:
-                            last_dt = parse_game_datetime(last_txt)
-                        if not (last_dt and last_dt > crime_dt):
-                            print(f"Excluding {name}: Last online {last_txt or 'unreadable'} not after Time of Crime.")
-                            keep = False
+                            last_dt = parse_game_datetime(last_txt) if last_txt else None
+                            if not (crime_dt and last_dt and last_dt > crime_dt):
+                                print(
+                                    f"Excluding {name}: Last online {last_txt or 'unreadable'} not after Time of Crime.")
+                                keep = False
 
                     if keep:
                         print(f"Keeping {name}{' (Gangster)' if require_gangster else ''}.")
