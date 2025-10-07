@@ -8,7 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
-from database_functions import _read_json_file, get_player_cooldown, set_player_data, _set_last_timestamp, get_crime_targets_from_ddb
+from database_functions import get_player_cooldown, set_player_data, _set_last_timestamp, get_crime_targets_from_ddb
 import global_vars
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_and_send_keys, _get_element_text, _find_element, community_service_queue_count, _get_element_text_quiet, enqueue_community_services
 from misc_functions import transfer_money
@@ -317,9 +317,6 @@ def execute_yellow_pages_scan():
                     print(f"WARNING: Missing Home City cell for {player_name}. Skipping row.")
                     continue
                 player_city = city_elems[0].text.strip()
-
-                # --- Existing local storage (keep behavior) ---
-                set_player_data(player_name, home_city=player_city)
 
                 # --- DynamoDB: HomeCity upsert + notify on change (FirstSeen handled on new) ---
                 upsert_player_home_city(
