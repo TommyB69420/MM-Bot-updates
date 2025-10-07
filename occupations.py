@@ -194,11 +194,16 @@ def laundering(player_data):
     preferred_raw = global_vars.config.get("Launder", "Preferred", fallback="").strip()
     preferred = {n.strip().lower() for n in preferred_raw.split(",") if n.strip()}
 
-    # Skip if dirty money is not above reserve
+    # Skip if dirty money is not above reserve, unless banker override exists
     if dirty <= reserve:
-        print(f"Skip: dirty ${dirty} ≤ reserve ${reserve}.")
-        global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(300, 600))  # 5–10 min backoff
-        return False
+        current_city = (player_data.get("Location") or player_data.get("Home City") or "").strip()
+        banker_priority = get_bankers_by_city(current_city) if current_city else set()
+        if not banker_priority:
+            print(f"Skip: dirty ${dirty} ≤ reserve ${reserve}. (no banker override)")
+            global_vars._script_launder_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(200, 300))  # 5–10 min backoff
+            return False
+        else:
+            print(f"Dirty ${dirty} ≤ reserve ${reserve}, but banker override found → continue with $5 trickle")
 
     # Navigate via Income → Money Laundering
     if not _navigate_to_page_via_menu(
@@ -221,13 +226,13 @@ def laundering(player_data):
     target_link = None
     fallback_link = None
 
-    # Laundering Boys Work: pick any bot user banker whose HomeCity == current city
+    # Laundering Bot Users work: pick any bot user banker whose HomeCity == current city
     current_city = (player_data.get("Location") or player_data.get("Home City") or "").strip()
     banker_priority = set()
     if current_city:
         banker_priority = get_bankers_by_city(current_city)
         if banker_priority:
-            print(f"Laundering Boys Work is active in {current_city}: {sorted(list(banker_priority))}")
+            print(f"Laundering Bot Users Work is active in {current_city}: {sorted(list(banker_priority))}")
         else:
             print(f"No banker bot users in {current_city}; using normal preference order.")
     else:
