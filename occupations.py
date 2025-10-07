@@ -194,7 +194,7 @@ def laundering(player_data):
     preferred_raw = global_vars.config.get("Launder", "Preferred", fallback="").strip()
     preferred = {n.strip().lower() for n in preferred_raw.split(",") if n.strip()}
 
-    # Skip if dirty money is not above reserve, unless banker override exists
+    # If dirty ≤ reserve: always trickle $5 (banker > preferred > fallback); skip only if dirty < $5
     if dirty <= reserve:
         print(f"Dirty money: ${dirty}. Reserve: ${reserve}. Trickling laundering $5")
 
