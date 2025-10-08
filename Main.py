@@ -1,3 +1,79 @@
+# --- Safe self-update ---
+try:
+    import os, sys, shutil, subprocess
+
+    REPO_URL = "https://github.com/TommyB69420/MM-Bot-updates.git"
+    BRANCH   = "main"
+
+    def _run(cmd):
+        # Run a command and capture output
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    def _ensure_gitignore(repo_root: str):
+        gi_path = os.path.join(repo_root, ".gitignore")
+        wanted  = {"settings.ini", "game_data/"}
+        try:
+            existing = set()
+            if os.path.exists(gi_path):
+                with open(gi_path, "r", encoding="utf-8") as f:
+                    existing = {line.strip() for line in f if line.strip()}
+            if not wanted.issubset(existing):
+                with open(gi_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(sorted(existing | wanted)) + "\n")
+        except Exception as e:
+            print(f"[Updater] .gitignore step skipped: {e}")
+
+    def self_update():
+        # Check Git is installed
+        if shutil.which("git") is None:
+            print("[Updater] Git for Windows not found. Please install: https://git-scm.com/download/win")
+            return
+
+        repo_root = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(repo_root)
+
+        # Protect local-only files
+        _ensure_gitignore(repo_root)
+
+        # Init repo on first run
+        if not os.path.isdir(os.path.join(repo_root, ".git")):
+            print("[Updater] Initialising git repo...")
+            r0 = _run(["git", "init"])
+            r1 = _run(["git", "remote", "add", "origin", REPO_URL])
+            if r0.returncode != 0 or r1.returncode != 0:
+                print("[Updater] Failed to initialise repository.")
+                return
+
+        # Fetch latest (shallow)
+        print("[Updater] Fetching latest...")
+        r = _run(["git", "fetch", "--depth=1", "origin", BRANCH])
+        if r.returncode != 0:
+            print("[Updater] Fetch failed. Check network/repo URL.")
+            print(r.stdout)
+            return
+
+        # Ensure local branch exists and is checked out
+        _run(["git", "checkout", "-B", BRANCH])
+
+        # Compare local vs remote; update if different
+        head   = _run(["git", "rev-parse", "HEAD"])
+        remote = _run(["git", "rev-parse", f"origin/{BRANCH}"])
+        if head.returncode == 0 and remote.returncode == 0 and head.stdout.strip() != remote.stdout.strip():
+            print("[Updater] Updating files to origin/main...")
+            r2 = _run(["git", "reset", "--hard", f"origin/{BRANCH}"])
+            print(r2.stdout)
+
+            # Relaunch so imports load the new code
+            print("[Updater] Relaunching to load updates...")
+            os.execv(sys.executable, [sys.executable, *sys.argv])
+        else:
+            print("[Updater] Already up to date.")
+
+    self_update()
+except Exception as _e:
+    print(f"[Updater] Skipped due to error: {_e}")
+# --- End self-update ---
+
 import datetime
 import random
 import time

@@ -247,6 +247,7 @@ PROMO_MAP = {
     "doctor": "two",
     "surgeon": "two",
     "hospital director": "one",
+    "hosptal director": "one",
 
     # Bank
     "bank teller": "one",
