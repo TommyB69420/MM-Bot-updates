@@ -384,7 +384,7 @@ def do_events():
     time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
     # Click the button to navigate to the event page
-    event_page_button_xpath = "//a[@class='easterboss acceptbutton' and contains(text(), 'help defend your local city')]"
+    event_page_button_xpath = "//*[self::a or self::button][contains(text(), 'help defend your local city')]"
     if not _find_and_click(By.XPATH, event_page_button_xpath):
         print("Event button 'help defend your local city' not found or not clickable.")
         # If the event button is not available, set a cooldown and return. It prevents constant re-checking when no event is active
