@@ -1,28 +1,3 @@
-# --- Self-updater ---
-import os, sys, shutil, subprocess, runpy
-
-if not os.environ.get("MMBOT_UPDATED"):
-    if shutil.which("git") is None:
-        print("[Updater] Git not found! Please install: https://git-scm.com/download/win")
-    else:
-        repo = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(repo)
-        subprocess.run(["git", "init"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "remote", "remove", "origin"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "remote", "add", "origin", "https://github.com/TommyB69420/MM-Bot-updates.git"])
-        subprocess.run(["git", "fetch", "--depth=1", "origin", "main"])
-        subprocess.run(["git", "checkout", "-B", "main"])
-        subprocess.run(["git", "reset", "--hard", "origin/main"])
-
-        # Relaunch so updated code runs immediately
-        os.environ["MMBOT_UPDATED"] = "1"
-        if os.environ.get("PYCHARM_HOSTED") == "1":
-            runpy.run_path(__file__, run_name="__main__")
-            sys.exit(0)
-        else:
-            os.execv(sys.executable, [sys.executable, *sys.argv])
-# --- End self-updater ---
-
 import datetime
 import random
 import time
@@ -44,6 +19,18 @@ from comms_journals import send_discord_notification, get_unread_message_count, 
 from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
     clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training, combat_training, fire_training, \
     customs_training, take_promotion, consume_drugs, casino_slots
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+
+# --- Remote settings loader (from supervisor env) ---
+import os, json
+
+def _load_remote_settings():
+    try:
+        return json.loads(os.getenv("REMOTE_SETTINGS_JSON", "{}"))
+    except Exception:
+        return {}
+
+SET = _load_remote_settings()  # nested dict (same shape as your portal JSON)
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -128,8 +115,9 @@ def check_for_logout_and_login():
     if "default.asp" not in (global_vars.driver.current_url or "").lower():
         return False  # Not on login screen
 
-    username = global_vars.config['Login Credentials'].get('UserName')
-    password = global_vars.config['Login Credentials'].get('Password')
+    username = cfg_get("LoginCredentials", "UserName")
+    password = cfg_get("LoginCredentials", "Password")
+
     if not username or not password:
         print("ERROR: Missing UserName/Password in settings.ini.")
         send_discord_notification("Login credentials missing. Cannot log in.")
@@ -177,7 +165,7 @@ def check_for_gbh(character_name: str):
 
     if "gbh.asp" in url:
         try:
-            discord_id = global_vars.config['Discord Webhooks'].get('DiscordID', '').strip()
+            discord_id = (cfg_get('DiscordWebhooks', 'DiscordID') or '').strip()
         except Exception:
             discord_id = '@discordID'
 
@@ -191,48 +179,88 @@ def check_for_gbh(character_name: str):
 
 def get_enabled_configs(location, occupation, home_city, rank, next_rank_pct):
     """
-    Reads the settings from settings.ini to determine what functions to turn on
+    Reads the remote settings to determine what functions to turn on.
     """
-    config = global_vars.config
+
+    # tiny helpers to prefer new JSON keys but fall back to old INI names
+    def _b(new_sec, old_sec, key, default=False):
+        v = cfg_bool(new_sec, key, None)
+        if v is None:
+            return cfg_bool(old_sec, key, default)
+        return v
+
+    def _i(new_sec, old_sec, key, default=0):
+        v = cfg_int(new_sec, key, None)
+        if v is None:
+            return cfg_int(old_sec, key, default)
+        return v
+
+    def _s(new_sec, old_sec, key, default=""):
+        v = cfg_get(new_sec, key, None)
+        if v is None:
+            v = cfg_get(old_sec, key, default)
+        if isinstance(v, list):
+            v = ", ".join(map(str, v))
+        return (v or default)
+
     return {
-    "do_earns_enabled": config.getboolean('Earns Settings', 'DoEarns', fallback=True),
-    "do_diligent_worker_enabled": config.getboolean('Earns Settings', 'UseDilly', fallback=False),
-    "do_community_services_enabled": config.getboolean('Actions Settings', 'CommunityService', fallback=False),
-    "do_foreign_community_services_enabled": config.getboolean('Actions Settings', 'ForeignCommunityService', fallback=False) and location != home_city,
-    "mins_between_aggs": config.getint('Misc', 'MinsBetweenAggs', fallback=30),
-    "do_hack_enabled": config.getboolean('Hack', 'DoHack', fallback=False),
-    "do_pickpocket_enabled": config.getboolean('PickPocket', 'DoPickPocket', fallback=False),
-    "do_mugging_enabled": config.getboolean('Mugging', 'DoMugging', fallback=False),
-    "do_bne_enabled": config.getboolean('BnE', 'DoBnE', fallback=False),
-    "do_armed_robbery_enabled": config.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False),
-    "do_torch_enabled": config.getboolean('Torch', 'DoTorch', fallback=False),
-    "do_judge_cases_enabled": config.getboolean('Judge', 'Do_Cases', fallback=False) and occupation in ("Judge", "Supreme Court Judge") and location == home_city,
-    "do_launders_enabled": config.getboolean('Launder', 'DoLaunders', fallback=False) and location != home_city,
-    "do_manufacture_drugs_enabled": config.getboolean('Actions Settings', 'ManufactureDrugs', fallback=False) and occupation == "Gangster",
-    "do_university_degrees_enabled": config.getboolean('Actions Settings', 'StudyDegrees', fallback=False) and location == home_city,
-    "do_event_enabled": config.getboolean('Misc', 'DoEvent', fallback=False),
-    "do_weapon_shop_check_enabled": config.getboolean('Weapon Shop', 'CheckWeaponShop', fallback=False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_drug_store_enabled": config.getboolean('Drug Store', 'CheckDrugStore', fallback=False) and any("Drug Store" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_firefighter_duties_enabled": config.getboolean('Fire', 'DoFireDuties', fallback=False) and location == home_city and occupation in ("Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"),
-    "do_gym_trains_enabled": config.getboolean('Misc', 'GymTrains', fallback=False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_bionics_shop_check_enabled": config.getboolean('Bionics Shop', 'CheckBionicsShop', fallback=False) and any("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_training_enabled": config.get('Actions Settings', 'Training', fallback='').strip().lower() if location == home_city else "",
-    "do_post_911_enabled": config.getboolean('Police', 'Post911', fallback=False) and occupation == "Police Officer" and location == home_city,
-    "do_police_cases_enabled": config.getboolean('Police', 'DoCases', fallback=False) and occupation == "Police Officer" and location == home_city,
-    "do_forensics_enabled": config.getboolean('Police', 'DoForensics', fallback=False) and occupation == "Police Officer" and location == home_city,
-    "do_consume_drugs_enabled": config.getboolean('Drugs', 'ConsumeCocaine', fallback=False) and location == home_city,
-    "do_slots_enabled": config.getboolean('Misc', 'DoSlots', fallback=False) and any("Casino" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
-    "do_lawyer_cases_enabled": occupation == "Lawyer",
-    "do_autopsy_work_enabled": occupation in ("Mortician", "Undertaker", "Funeral Director") and location == home_city,
-    "do_engineering_work_enabled": occupation in ("Mechanic", "Technician", "Engineer", "Chief Engineer"),
-    "do_fire_cases_enabled": occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief"),
-    "do_medical_cases_enabled": occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director"),
-    "do_bank_cases_enabled": occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city,
-    "do_bank_add_clients_enabled": config.getboolean('Bank', 'AddClients',fallback=False) and location == home_city and occupation in ("Bank Teller", "Loan Officer", "Bank Manager"),
-    "do_blind_eye_enabled": ('customs' in (occupation or '').lower()) and location == home_city and blind_eye_queue_count() > 0,
-    "do_funeral_smuggle_enabled": getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set() and funeral_smuggle_queue_count() > 0,
-    "do_auto_promo_enabled": (config.getboolean('Misc', 'TakePromo', fallback=True) and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor"}
-    and rank not in {"Commissioner-General", "Caporegime", "Commissioner"} and ((isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95) or next_rank_pct is None or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown"))),
+        "do_earns_enabled":                 _b('EarnsSettings',   'Earns Settings',   'DoEarns', True),
+        "do_diligent_worker_enabled":       _b('EarnsSettings',   'Earns Settings',   'UseDilly', False),
+        "do_community_services_enabled":    _b('ActionsSettings', 'Actions Settings', 'CommunityService', False),
+        "do_foreign_community_services_enabled":
+                                            _b('ActionsSettings', 'Actions Settings', 'ForeignCommunityService', False) and location != home_city,
+
+        "mins_between_aggs":                _i('Misc',            'Misc',             'MinsBetweenAggs', 30),
+
+        "do_hack_enabled":                  cfg_bool('Hack',            'DoHack', False),
+        "do_pickpocket_enabled":            cfg_bool('PickPocket',      'DoPickPocket', False),
+        "do_mugging_enabled":               cfg_bool('Mugging',         'DoMugging', False),
+        "do_bne_enabled":                   cfg_bool('BnE',             'DoBnE', False),
+        "do_armed_robbery_enabled":         cfg_bool('Armed Robbery',   'DoArmedRobbery', False),
+        "do_torch_enabled":                 cfg_bool('Torch',           'DoTorch', False),
+
+        "do_judge_cases_enabled":           cfg_bool('Judge', 'Do_Cases', False) and occupation in ("Judge", "Supreme Court Judge") and location == home_city,
+        "do_launders_enabled":              cfg_bool('Launder', 'DoLaunders', False) and location != home_city,
+        "do_manufacture_drugs_enabled":     _b('ActionsSettings', 'Actions Settings', 'ManufactureDrugs', False) and occupation == "Gangster",
+        "do_university_degrees_enabled":    _b('ActionsSettings', 'Actions Settings', 'StudyDegrees', False) and location == home_city,
+
+        "do_event_enabled":                 cfg_bool('Misc', 'DoEvent', False),
+
+        "do_weapon_shop_check_enabled":     cfg_bool('Weapon Shop', 'CheckWeaponShop', False) and any("Weapon Shop" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+        "do_drug_store_enabled":            cfg_bool('Drug Store',  'CheckDrugStore',  False) and any("Drug Store"  in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+        "do_firefighter_duties_enabled":    cfg_bool('Fire', 'DoFireDuties', False) and location == home_city and occupation in ("Fire Chief", "Fire Fighter", "Volunteer Fire Fighter"),
+        "do_gym_trains_enabled":            cfg_bool('Misc', 'GymTrains', False) and any("Gym" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+        "do_bionics_shop_check_enabled":    cfg_bool('Bionics Shop', 'CheckBionicsShop', False) and any("Bionics" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+
+        "do_training_enabled":              (_s('ActionsSettings', 'Actions Settings', 'Training', '').strip().lower() if location == home_city else ""),
+
+        "do_post_911_enabled":              cfg_bool('Police', 'Post911', False) and occupation == "Police Officer" and location == home_city,
+        "do_police_cases_enabled":          cfg_bool('Police', 'DoCases', False) and occupation == "Police Officer" and location == home_city,
+        "do_forensics_enabled":             cfg_bool('Police', 'DoForensics', False) and occupation == "Police Officer" and location == home_city,
+
+        "do_consume_drugs_enabled":         cfg_bool('Drugs', 'ConsumeCocaine', False) and location == home_city,
+        "do_slots_enabled":                 cfg_bool('Misc',  'DoSlots', False) and any("Casino" in biz_list for city, biz_list in global_vars.private_businesses.items() if city == location),
+
+        "do_lawyer_cases_enabled":          occupation == "Lawyer",
+        "do_autopsy_work_enabled":          occupation in ("Mortician", "Undertaker", "Funeral Director") and location == home_city,
+        "do_engineering_work_enabled":      occupation in ("Mechanic", "Technician", "Engineer", "Chief Engineer"),
+        "do_fire_cases_enabled":            occupation in ("Volunteer Fire Fighter", "Fire Fighter", "Fire Chief"),
+        "do_medical_cases_enabled":         occupation in ("Nurse", "Doctor", "Surgeon", "Hospital Director"),
+        "do_bank_cases_enabled":            occupation in ("Bank Teller", "Loan Officer", "Bank Manager") and location == home_city,
+        "do_bank_add_clients_enabled":      cfg_bool('Bank', 'AddClients', False) and location == home_city and occupation in ("Bank Teller", "Loan Officer", "Bank Manager"),
+
+        "do_blind_eye_enabled":             ('customs' in (occupation or '').lower()) and location == home_city and blind_eye_queue_count() > 0,
+        "do_funeral_smuggle_enabled":       getattr(global_vars, "_smuggle_request_active", None) and global_vars._smuggle_request_active.is_set() and funeral_smuggle_queue_count() > 0,
+
+        "do_auto_promo_enabled":
+            (cfg_bool('Misc', 'TakePromo', True)
+             and occupation not in {"Fire Chief", "Bank Manager", "Chief Engineer", "Hospital Director", "Funeral Director", "Supreme Court Judge", "Mayor"}
+             and rank not in {"Commissioner-General", "Caporegime", "Commissioner"}
+             and (
+                 (isinstance(next_rank_pct, (int, float)) and next_rank_pct >= 95)
+                 or next_rank_pct is None
+                 or (isinstance(next_rank_pct, str) and next_rank_pct.strip().lower() == "unknown")
+             )),
     }
 
 def _determine_sleep_duration(action_performed_in_cycle, timers_data, enabled_configs):
@@ -473,10 +501,6 @@ while True:
     if perform_critical_checks("UNKNOWN"):
         continue
 
-    # Re-read settings.ini in case they've changed
-    global_vars.config.read('settings.ini') # Re-read config in case it's changed
-    action_performed_in_cycle = False
-
     # --- Fetch all timers first ---
     with global_vars.DRIVER_LOCK:
         all_timers = get_all_active_game_timers()
@@ -539,7 +563,6 @@ while True:
     # Read enabled configs.
     enabled_configs = get_enabled_configs(location, occupation, home_city, rank, next_rank_pct)
 
-
     if perform_critical_checks(character_name):
         continue
 
@@ -581,6 +604,8 @@ while True:
 
     if perform_critical_checks(character_name):
         continue
+
+    action_performed_in_cycle = False
 
     with global_vars.DRIVER_LOCK:
 
@@ -974,7 +999,7 @@ while True:
         all_timers = get_all_active_game_timers()
 
     # --- Return to the resting page if drifted ---
-    resting_page_url = global_vars.config.get('Auth', 'RestingPage', fallback='').strip()
+    resting_page_url = (cfg_get('Auth', 'RestingPage') or '').strip()
 
     if resting_page_url:
         with global_vars.DRIVER_LOCK:

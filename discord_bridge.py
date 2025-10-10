@@ -2,7 +2,6 @@ import os
 import re
 import threading
 from queue import Queue, Empty
-import configparser
 import discord
 import time, random
 
@@ -14,15 +13,30 @@ from helper_functions import _find_and_click
 from misc_functions import execute_sendmoney_to_player, execute_travel_to_city
 from timer_functions import get_all_active_game_timers
 
-# ----- Config loading -----
-cfg = configparser.ConfigParser()
-cfg.read('settings.ini')
+# ---- config helpers (from your remote settings) --------------------------------
+try:
+    # if you exported the helpers from global_vars
+    from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+except Exception:
+    # or from a dedicated helpers module if that's where you put them
+    from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested  # type: ignore
+
+def _to_int(val, default=0) -> int:
+    try:
+        if val is None:
+            return default
+        if isinstance(val, int):
+            return val
+        return int(str(val).strip())
+    except Exception:
+        return default
+
+# ----- Config loading (from Dynamo-backed settings) -----
+BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN') or cfg_get('DiscordBot', 'bot_token')
+LISTEN_CHANNEL_ID = _to_int(cfg_get('DiscordBot', 'listen_channel_id', '0'), 0)
+CMD_PREFIX = cfg_get('DiscordBot', 'command_prefix', '!')
 
 # Raise error if Discord bot is misconfigured
-BOT_TOKEN = (os.getenv('DISCORD_BOT_TOKEN') or cfg.get('DiscordBot', 'bot_token', fallback=None))
-LISTEN_CHANNEL_ID = int(cfg.get('DiscordBot', 'listen_channel_id', fallback="0"))
-CMD_PREFIX = cfg.get('DiscordBot', 'command_prefix', fallback='!')
-
 if not BOT_TOKEN or not LISTEN_CHANNEL_ID:
     raise RuntimeError("You do not have permission to use this script. Speak to the Author")
 

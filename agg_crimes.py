@@ -18,6 +18,7 @@ from aws_players import upsert_player_home_city, mark_top_job
 from database_functions import acquire_distributed_timer, complete_distributed_timer, reschedule_distributed_timer, TIMER_NAME_FUNERAL_YELLOW, remove_player_cooldown, rename_player_in_players_table
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Attr
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 try:
     import requests  # pip install requests
@@ -670,28 +671,28 @@ def execute_aggravated_crime_logic(player_data):
         global_vars._script_agg_crime_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
         return False
 
-    do_hack = global_vars.config.getboolean('Hack', 'DoHack', fallback=False)
-    hack_repay = global_vars.config.getboolean('Hack', 'Repay', fallback=False)
-    hack_min = global_vars.config.getint('Hack', 'min_amount', fallback=1)
-    hack_max = global_vars.config.getint('Hack', 'max_amount', fallback=100)
+    do_hack      = cfg_bool('Hack', 'DoHack', False)
+    hack_repay   = cfg_bool('Hack', 'Repay', False)
+    hack_min     = cfg_int ('Hack', 'min_amount', 1)
+    hack_max     = cfg_int ('Hack', 'max_amount', 100)
 
-    do_pickpocket = global_vars.config.getboolean('PickPocket', 'DoPickPocket', fallback=False)
-    pickpocket_repay = global_vars.config.getboolean('PickPocket', 'Repay', fallback=False)
-    pickpocket_min = global_vars.config.getint('PickPocket', 'min_amount', fallback=1)
-    pickpocket_max = global_vars.config.getint('PickPocket', 'max_amount', fallback=100)
+    do_pickpocket    = cfg_bool('PickPocket', 'DoPickPocket', False)
+    pickpocket_repay = cfg_bool('PickPocket', 'Repay', False)
+    pickpocket_min   = cfg_int ('PickPocket', 'min_amount', 1)
+    pickpocket_max   = cfg_int ('PickPocket', 'max_amount', 100)
 
-    do_mugging = global_vars.config.getboolean('Mugging', 'DoMugging', fallback=False)
-    mugging_repay = global_vars.config.getboolean('Mugging', 'Repay', fallback=False)
-    mugging_min = global_vars.config.getint('Mugging', 'min_amount', fallback=1)
-    mugging_max = global_vars.config.getint('Mugging', 'max_amount', fallback=100)
+    do_mugging    = cfg_bool('Mugging', 'DoMugging', False)
+    mugging_repay = cfg_bool('Mugging', 'Repay', False)
+    mugging_min   = cfg_int ('Mugging', 'min_amount', 1)
+    mugging_max   = cfg_int ('Mugging', 'max_amount', 100)
 
-    do_bne = global_vars.config.getboolean('BnE', 'DoBnE', fallback=False)
-    bne_repay = global_vars.config.getboolean('BnE', 'Repay', fallback=True)
-    raw_target_apartments = global_vars.config.get('BnE', 'BnETarget', fallback='')
-    bne_target_apartments = [apt.strip().lower() for apt in raw_target_apartments.split(',') if apt.strip()]
+    do_bne     = cfg_bool('BnE', 'DoBnE', False)
+    bne_repay  = cfg_bool('BnE', 'Repay', True)
+    # Handles either a single value like "Flat" or a CSV like "Flat, Studio Unit"
+    bne_target_apartments = [s.lower() for s in cfg_list('BnE', 'BnETarget')]
 
-    do_armed_robbery = global_vars.config.getboolean('Armed Robbery', 'DoArmedRobbery', fallback=False)
-    do_torch = global_vars.config.getboolean('Torch', 'DoTorch', fallback=False)
+    do_armed_robbery = cfg_bool('Armed Robbery', 'DoArmedRobbery', False)
+    do_torch         = cfg_bool('Torch', 'DoTorch', False)
 
     # --- PRIORITY: Torch over Armed Robbery when both are enabled ---
     if do_torch and do_armed_robbery:
@@ -1299,7 +1300,7 @@ def _perform_armed_robbery_attempt(player_data, selected_business_name=None):
             global_vars.armed_robbery_business_name_for_repay = stolen_business_name
             global_vars.armed_robbery_successful = True
 
-            if stolen_actual_amount > 0 and global_vars.config.getboolean('Armed Robbery', 'Repay', fallback=False):
+            if stolen_actual_amount > 0 and cfg_bool('Armed Robbery', 'Repay', False):
                 print(f"Repaying ${stolen_actual_amount} to {stolen_business_name}")
                 _get_business_owner_and_repay(stolen_business_name, stolen_actual_amount, player_data)
                 time.sleep(global_vars.ACTION_PAUSE_SECONDS * 2)
@@ -1330,8 +1331,8 @@ def _perform_torch_attempt(player_data):
     global_vars.torch_business_name_for_repay = None
     global_vars.torch_successful = False
 
-    torch_repay = global_vars.config.getboolean('Torch', 'Repay', fallback=False)
-    blacklist_raw = global_vars.config.get('Torch', 'Blacklist', fallback='').lower()
+    torch_repay = cfg_bool('Torch', 'Repay', False)
+    blacklist_raw = {s.lower() for s in cfg_list('Torch', 'Blacklist')}
     blacklist_items = {item.strip() for item in blacklist_raw.split(',') if item.strip()}
     blacklist_items.add("drug house") # Always blacklist drug house
     blacklist_items.add("fire station")  # Always blacklist fire station
@@ -1626,11 +1627,12 @@ def _get_suitable_bne_target(current_location, character_name, excluded_players,
         if player_id == character_name or (excluded_players and player_id in excluded_players):
             continue
 
-        # City rule: enforced by DDB query (HomeCity filter above)
-
         # Apartment filter (if any)
         if filters:
-            apt = (target_home_city.get("Apartment") or "").strip().lower()
+            if isinstance(target_home_city, dict):
+                apt = (target_home_city.get("Apartment") or "").strip().lower()
+            else:
+                apt = ""
             if apt not in filters:
                 continue
 

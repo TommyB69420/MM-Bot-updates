@@ -14,6 +14,7 @@ from helper_functions import _find_and_send_keys, _find_and_click, _find_element
     _get_element_text, _get_element_attribute, _find_elements, _get_current_url, blind_eye_queue_count, \
     _get_dropdown_options, _select_dropdown_option, dequeue_blind_eye, _find_elements_quiet, dequeue_funeral_smuggle, \
     funeral_smuggle_queue_count
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 
 def community_services(player_data):
@@ -25,7 +26,7 @@ def community_services(player_data):
 
     # Only do CS if Jail Break is visible in Aggravated Crimes, and CSNotToRemoveBnE is enabled in settings.ini
     try:
-        cs_guard = global_vars.config.getboolean('BnE', 'CSNotToRemoveBnE', fallback=False)
+        cs_guard = cfg_bool('BnE', 'CSNotToRemoveBnE', False)
     except Exception:
         cs_guard = False
 
@@ -190,8 +191,9 @@ def laundering(player_data):
 
     # Load player money + launder config
     dirty = int(player_data.get("Dirty Money", 0))
-    reserve = global_vars.config.getint("Launder", "Reserve", fallback=0)
-    preferred_raw = global_vars.config.get("Launder", "Preferred", fallback="").strip()
+    reserve = cfg_int('Launder', 'Reserve', 0)
+    preferred_list = [s.strip() for s in cfg_list('Launder', 'Preferred')]
+    preferred_raw = ', '.join(preferred_list)
     preferred = {n.strip().lower() for n in preferred_raw.split(",") if n.strip()}
 
     # If dirty ≤ reserve: always trickle $5 (banker > preferred > fallback); skip only if dirty < $5
@@ -510,9 +512,9 @@ def judge_casework(player_data):
 
     # Read settings.ini for who to skip cases on
     skip_players = {
-        name.strip().lower()
-        for name in global_vars.config.get('Judge', 'Skip_Cases_On_Player', fallback='').split(',')
-        if name.strip()
+    s.strip().lower()
+    for s in cfg_list('Judge', 'Skip_Cases_On_Player')
+    if isinstance(s, str) and s.strip()
     }
 
     # Define the rows to look at in the judge table
@@ -569,15 +571,41 @@ def judge_casework(player_data):
 
 def process_judge_case_verdict(crime_committed, character_name):
     """Applies fine, sets no community service/jail time, and submits verdict."""
-    fine_amount = global_vars.config.getint('Judge', crime_committed, fallback=1000)
-    if fine_amount == 1000:
-        print(f"Warning: Fine amount for crime '{crime_committed}' not found or invalid in settings.ini. Defaulting to 1000.")
+    from selenium.common.exceptions import NoSuchElementException
 
+    # --- Fine amount: prefer new nested map Judge.Fines, fallback to legacy flat keys ---
+    crime_key = (crime_committed or "").strip().lower()
+    fine_amount = None
+
+    fines_map = cfg_get('Judge', 'Fines', {})
+    if isinstance(fines_map, dict):
+        # case-insensitive lookup
+        for k, v in fines_map.items():
+            if isinstance(k, str) and k.strip().lower() == crime_key:
+                try:
+                    fine_amount = int(v)
+                except Exception:
+                    fine_amount = None
+                break
+
+    if fine_amount is None:
+        # legacy fallback: value directly under [Judge] section
+        fine_amount = cfg_int('Judge', crime_committed, 1000)
+
+    if not isinstance(fine_amount, int):
+        fine_amount = 1000
+
+    if fine_amount == 1000:
+        print(f"Warning: Fine amount for crime '{crime_committed}' not found or invalid in settings. Defaulting to 1000.")
+
+    # --- Fill fine and select 'No community service' (keeps your original XPaths) ---
     if not _find_and_send_keys(By.XPATH, "//input[@name='fine']", str(fine_amount)):
         return False
+
     if not _find_and_click(By.XPATH, "/html/body/div[4]/div[4]/div[2]/div/center/form/p[4]/select/option[2]"):
         return False
 
+    # --- Set jail time: prefer explicit 'no jail' option, else pick the smallest positive ---
     jail_time_dropdown = _find_element(By.XPATH, "//select[@name='sentence']")
     if jail_time_dropdown:
         try:
@@ -602,7 +630,7 @@ def process_judge_case_verdict(crime_committed, character_name):
     else:
         return False
 
-    # Click Submit
+    # --- Submit verdict ---
     if not _find_and_click(By.XPATH, "//input[@name='B1']"):
         return False
     return True

@@ -14,6 +14,7 @@ from helper_functions import _find_and_click, _find_element, _navigate_to_page_v
     _click_quick_xpath
 from database_functions import set_all_degrees_status, get_all_degrees_status, _set_last_timestamp, _read_json_file, _write_json_file
 from timer_functions import get_all_active_game_timers
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 # =========================
 # Travel command (misc_functions.py)
@@ -241,8 +242,9 @@ def clean_money_on_hand_logic(initial_player_data):
     action_performed = False
     clean_money = initial_player_data.get("Clean Money", 0)
 
-    excess_money_on_hand_limit = global_vars.config.getint('Misc', 'ExcessMoneyOnHand', fallback=100000)
-    desired_money_on_hand = global_vars.config.getint('Misc', 'MoneyOnHand', fallback=50000)
+    excess_money_on_hand_limit = cfg_int('Misc', 'ExcessMoneyOnHand', 100000)
+    desired_money_on_hand      = cfg_int('Misc', 'MoneyOnHand', 50000)
+
 
     # --- Deposit excess money ---
     if clean_money > excess_money_on_hand_limit:
@@ -429,11 +431,12 @@ def check_weapon_shop(initial_player_data):
     print("Timer was marked ready by main loop. Proceeding with Weapon Shop check.")
 
     # Read settings
-    min_check = global_vars.config['Weapon Shop'].getint('MinWSCheck', 13)
-    max_check = global_vars.config['Weapon Shop'].getint('MaxWSCheck', 18)
-    notify_stock = global_vars.config['Weapon Shop'].getboolean('NotifyWSStock', fallback=True)
-    auto_buy_enabled = global_vars.config['Weapon Shop'].getboolean('AutoBuyWS', fallback=False)
-    priority_weapons = [w.strip() for w in global_vars.config['Weapon Shop'].get('AutoBuyWeapons', fallback='').split(',')]
+    min_check        = cfg_int ('Weapon Shop', 'MinWSCheck', 13)
+    max_check        = cfg_int ('Weapon Shop', 'MaxWSCheck', 18)
+    notify_stock     = cfg_bool('Weapon Shop', 'NotifyWSStock', True)
+    auto_buy_enabled = cfg_bool('Weapon Shop', 'AutoBuyWS', False)
+    priority_weapons = [w.strip() for w in cfg_list('Weapon Shop', 'AutoBuyWeapons')]
+
 
     # Navigate to Weapon Shop
     if not _navigate_to_page_via_menu(
@@ -543,9 +546,8 @@ def auto_buy_weapon(item_name: str):
     """
     Attempts to auto-buy the specified weapon if auto-buy is enabled and the weapon is whitelisted.
     """
-    config = global_vars.config['Weapon Shop']
-    auto_buy_enabled = config.getboolean('AutoBuyWS', fallback=False)
-    allowed_weapons = [w.strip() for w in config.get('AutoBuyWeapons', fallback='').split(',')]
+    auto_buy_enabled = cfg_bool('Weapon Shop', 'AutoBuyWS', False)
+    allowed_weapons  = [w.strip() for w in cfg_list('Weapon Shop', 'AutoBuyWeapons')]
 
     if not auto_buy_enabled:
         print(f"[AutoBuy] Skipping {item_name} - AutoBuy is disabled.")
@@ -556,7 +558,7 @@ def auto_buy_weapon(item_name: str):
         return
 
     print(f"[AutoBuy] Attempting to buy: {item_name}")
-    weapon_radio_xpath = f"//input[@id='{item_name}']"
+    weapon_radio_xpath   = f"//input[@id='{item_name}']"
     purchase_button_xpath = "//input[@name='B1']"
 
     # Try to select the weapon radio button
@@ -580,7 +582,9 @@ def auto_buy_weapon(item_name: str):
             send_discord_notification(f"Successfully purchased {item_name} from Weapon Shop!")
         else:
             print(f"[AutoBuy] FAILED: No confirmation message found for {item_name}.")
-            send_discord_notification(f"Attempted to purchase {item_name}, but failed. The item is gone, no available hands, or insufficient funds.")
+            send_discord_notification(
+                f"Attempted to purchase {item_name}, but failed. The item is gone, no available hands, or insufficient funds."
+            )
 
 def check_drug_store(initial_player_data):
     """
@@ -590,7 +594,7 @@ def check_drug_store(initial_player_data):
     """
     print("\n--- Beginning Drug Store Operation ---")
 
-    notify_stock = global_vars.config.getboolean('Drug Store', 'NotifyDSStock', fallback=True)
+    notify_stock = cfg_bool('Drug Store', 'NotifyDSStock', True)
 
     # Cooldown Check
     if not hasattr(global_vars, '_script_drug_store_cooldown_end_time'):
@@ -681,18 +685,18 @@ def check_drug_store(initial_player_data):
 
 def auto_buy_drug_store_item(item_name: str):
     """
-    Attempts to auto-buy the specified drug store item if AutoBuyDS is enabled in settings.ini.
-    Sends Discord notification only if a success message is detected.
+    Attempts to auto-buy the specified drug store item if AutoBuyDS is enabled in settings.
+    Sends a Discord notification only if a success message is detected.
     """
-    config = global_vars.config['Drug Store']
-    auto_buy_enabled = config.getboolean('AutoBuyDS', fallback=False)
+    # Toggle from Dynamo-backed settings
+    auto_buy_enabled = cfg_bool('Drug Store', 'AutoBuyDS', False)
 
     if not auto_buy_enabled:
-        print(f"[AutoBuy] Skipping {item_name} - AutoBuyDS is disabled in settings.ini.")
+        print(f"[AutoBuy] Skipping {item_name} - AutoBuyDS is disabled in settings.")
         return
 
     print(f"[AutoBuy] Attempting to buy: {item_name}")
-    item_radio_xpath = f"//input[@id='{item_name}']"
+    item_radio_xpath      = f"//input[@id='{item_name}']"
     purchase_button_xpath = "//input[@name='B1']"
     success_message_xpath = "//div[@id='success']"
 
@@ -714,7 +718,7 @@ def auto_buy_drug_store_item(item_name: str):
     # Look for the success message
     success_element = _find_element(By.XPATH, success_message_xpath)
     if success_element:
-        success_text = success_element.text.strip()
+        success_text = (success_element.text or "").strip()
         print(f"[AutoBuy] SUCCESS: {success_text}")
         send_discord_notification(f"Purchased {item_name} from Drug Store.")
 
@@ -731,15 +735,22 @@ def check_bionics_shop(initial_player_data):
     Checks the Bionics Shop for stock, notifies Discord if enabled,
     and attempts auto-buy if enabled and affordable.
     """
+    import datetime, time, random
+    from selenium.webdriver.common.by import By
+    from misc_functions import withdraw_money
+
     print("\n--- Beginning Bionics Shop Operation ---")
 
-    # Settings
-    config = global_vars.config['Bionics Shop']
-    min_check = config.getint('MinBiosCheck', 11)
-    max_check = config.getint('MaxBiosCheck', 13)
-    notify_stock = config.getboolean('NotifyBSStock', fallback=True)
-    auto_buy_enabled = config.getboolean('DoAutoBuyBios', fallback=False)
-    priority_bionics = [b.strip() for b in config.get('AutoBuyBios', fallback='').split(',')]
+    # Settings (Dynamo-backed)
+    min_check        = cfg_int ('Bionics Shop', 'MinBiosCheck', 11)
+    max_check        = cfg_int ('Bionics Shop', 'MaxBiosCheck', 13)
+    notify_stock     = cfg_bool('Bionics Shop', 'NotifyBSStock', True)
+    auto_buy_enabled = cfg_bool('Bionics Shop', 'DoAutoBuyBios', False)
+    priority_bionics = [b.strip() for b in cfg_list('Bionics Shop', 'AutoBuyBios')]
+
+    # sanity guard
+    if min_check > max_check:
+        min_check, max_check = max_check, min_check
 
     # Navigation
     if not _navigate_to_page_via_menu("//span[@class='city']",
@@ -816,19 +827,20 @@ def auto_buy_bionic(item_name: str, item_id: str):
     """
     Attempts to buy a bionic if it's allowed by settings.
     """
-    config = global_vars.config['Bionics Shop']
-    if not config.getboolean('DoAutoBuyBios', fallback=False):
-        print(f"[AutoBuy] Skipping {item_name} - AutoBuy disabled.")
+    auto_buy_enabled = cfg_bool('Bionics Shop', 'DoAutoBuyBios', False)
+    allowed_items    = [b.strip() for b in cfg_list('Bionics Shop', 'AutoBuyBios')]
+
+    if not auto_buy_enabled:
+        print(f"[AutoBuy] Skipping {item_name} - AutoBuy is disabled in settings.")
         return
 
-    allowed_items = [b.strip() for b in config.get('AutoBuyBios', fallback='').split(',')]
     if item_name not in allowed_items:
         print(f"[AutoBuy] Skipping {item_name} - Not in allowed list.")
         return
 
     print(f"[AutoBuy] Attempting to buy: {item_name}")
-    radio_xpath = f"//input[@type='radio' and @value='{item_id}']"
-    purchase_xpath = "//input[@name='B1']"
+    radio_xpath     = f"//input[@type='radio' and @value='{item_id}']"
+    purchase_xpath  = "//input[@name='B1']"
 
     if not _find_and_click(By.XPATH, radio_xpath):
         print(f"[AutoBuy] Failed to select {item_name}. XPath attempted: {radio_xpath}")
@@ -846,7 +858,9 @@ def auto_buy_bionic(item_name: str, item_id: str):
         send_discord_notification(f"Successfully bought {item_name} from Bionics Shop!")
     else:
         print(f"[AutoBuy] FAILED: No confirmation for {item_name}.")
-        send_discord_notification(f"Failed to purchase {item_name}. It might be gone, you may not have free hands, or funds were insufficient.")
+        send_discord_notification(
+            f"Failed to purchase {item_name}. It might be gone, you may not have free hands, or funds were insufficient."
+        )
 
 def jail_work():
     """
@@ -862,8 +876,9 @@ def jail_work():
         if _find_and_click(By.XPATH, "//span[@class='income']"):
             try:
                 # Check Settings.ini to determine if making a shank is enabled
-                make_shank = global_vars.config.getboolean("Earns Settings", "MakeShank", fallback=False)
-                dig_tunnel = global_vars.config.getboolean("Earns Settings", "DigTunnel", fallback=False)
+                make_shank = cfg_bool('EarnsSettings', 'MakeShank', False)
+                dig_tunnel = cfg_bool('EarnsSettings', 'DigTunnel', False)
+
 
                 # Find all duties radio buttons
                 all_jobs = global_vars.driver.find_elements(By.XPATH, "//input[@type='radio' and @name='job']")
@@ -1078,7 +1093,11 @@ def combat_training():
     print("\n--- Beginning Combat Training Operation ---")
 
     # Desired course from settings
-    course_name = global_vars.config.get('Actions Settings', 'Training', fallback='').strip()
+    val = (cfg_get('ActionsSettings', 'Training', '')
+       or cfg_get('Actions Settings', 'Training', '')
+       or '')
+    course_name = (val[0] if isinstance(val, list) else val).strip()
+
     if not course_name:
         print("FAILED: Set [Actions Settings] Training = (Jui Jitsu | Muay Thai | Karate | MMA)")
         return False
@@ -1362,7 +1381,7 @@ def take_promotion():
 
     # read the spam config (default False)
     try:
-        promo_spam_enabled = global_vars.config.getboolean('Misc', 'PromoSpam', fallback=False)
+        promo_spam_enabled = cfg_bool('Misc', 'PromoSpam', False)
     except Exception:
         promo_spam_enabled = False
 
@@ -1476,7 +1495,7 @@ def consume_drugs():
 
     # Config
     try:
-        limit = global_vars.config.getint('Drugs', 'ConsumeLimit', fallback=0)
+        limit = cfg_int('Drugs', 'ConsumeLimit', 0)
     except Exception:
         limit = 0
 

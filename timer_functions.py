@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from helper_functions import _get_element_text, _get_element_attribute
 from database_functions import _read_text_file, _get_last_timestamp, get_timer_remaining_seconds, TIMER_NAME_FUNERAL_YELLOW
 import global_vars
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 def parse_game_datetime(time_str):
     """
@@ -166,7 +167,7 @@ def get_all_active_game_timers():
         timers['post_911_time_remaining'] = max(timers.get('post_911_time_remaining', 0), 0.0) # If never checked, check immediately
 
     # Aggravated Crime Cooldowns (Base + Rechecks)
-    mins_between_aggs = global_vars.config.getint('Misc', 'MinsBetweenAggs', fallback=30)
+    mins_between_aggs = cfg_int('Misc', 'MinsBetweenAggs', 30)
     last_agg_crime_time_str = _read_text_file(global_vars.AGGRAVATED_CRIME_LAST_ACTION_FILE)
     # Ensure last_agg_crime_time is a datetime object, default to far past if file empty
     last_agg_crime_time = datetime.datetime.strptime(last_agg_crime_time_str, "%Y-%m-%d %H:%M:%S.%f") if last_agg_crime_time_str else (current_time - datetime.timedelta(days=365))

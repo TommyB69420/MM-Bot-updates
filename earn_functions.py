@@ -2,7 +2,7 @@ import datetime
 import random
 import time
 from selenium.webdriver.common.by import By
-
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 import global_vars
 from global_vars import ACTION_PAUSE_SECONDS, config
 from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _find_and_send_keys
@@ -63,7 +63,7 @@ def execute_earns_logic():
         global_vars._script_earn_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
         return False
 
-    which_earn = config['Earns Settings'].get('WhichEarn')
+    which_earn = cfg_get('EarnsSettings', 'WhichEarn')
     if not which_earn:
         print("ERROR: 'WhichEarn' setting not found in settings.ini under [Earns Settings].")
         global_vars._script_earn_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
@@ -108,6 +108,8 @@ def execute_earns_logic():
 
 def diligent_worker(character_name, which_player=None):
     """Manages the Diligent Worker operation: open page, choose target, perform action."""
+    import datetime, random
+    from selenium.webdriver.common.by import By
 
     print("\n--- Beginning Diligent Worker Operation ---")
 
@@ -122,21 +124,32 @@ def diligent_worker(character_name, which_player=None):
             return False
         print("Successfully navigated to Character Skills.")
 
-        # Read from Earns Settings - UseDillyOn
-        try:
-            cfg_val = global_vars.config.get('Earns Settings', 'UseDillyOn', fallback="").strip()
-        except Exception:
-            cfg_val = ""
+        # ---- Read UseDillyOn from remote settings (string or list/CSV) ----
+        # Prefer new section name; fall back to old for backward compatibility
+        names_list = (
+            cfg_list('EarnsSettings', 'UseDillyOn')
+            or cfg_list('Earns Settings', 'UseDillyOn')
+        )
+        # If cfg_list returned [], try raw string (in case someone set a plain string with no commas)
+        if not names_list:
+            raw = (cfg_get('EarnsSettings', 'UseDillyOn')
+                   or cfg_get('Earns Settings', 'UseDillyOn')
+                   or '')
+            if isinstance(raw, str) and raw.strip():
+                names_list = [raw.strip()]
 
-        target = (which_player or cfg_val or (character_name if character_name and character_name != "UNKNOWN" else "")).strip()
+        cfg_target = next((s.strip() for s in (names_list or []) if isinstance(s, str) and s.strip()), "")
+
+        # Priority: explicit arg > config value > own character name (if known)
+        target = (which_player or cfg_target or (character_name if character_name and character_name != "UNKNOWN" else "")).strip()
         if not target:
-            print("ERROR: No target name available (argument, config, and character_name are all empty).")
+            print("ERROR: No target name available (argument, settings, and character_name are all empty).")
             global_vars._script_skill_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(30, 90))
             return False
-        if not which_player and not cfg_val:
-            print(f"UseDillyOn is blank. Falling back to own character name: {target}")
+        if not which_player and not cfg_target:
+            print(f"UseDillyOn is blank in settings. Falling back to own character name: {target}")
 
-        # Enter the player name into the textbox (helper will clear and send keys)
+        # Enter the player name
         textbox_xpath = "//input[@name='target']"
         if not _find_and_send_keys(By.XPATH, textbox_xpath, target):
             print("FAILED: Diligent Worker textbox not found or not writable.")
@@ -151,7 +164,6 @@ def diligent_worker(character_name, which_player=None):
             return False
 
         print(f"Diligent Worker completed for '{target}'.")
-
         return True
 
     except Exception as e:

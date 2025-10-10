@@ -13,6 +13,190 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 
+# The supervisor sets this env var with the full item (includes Settings, Rev, etc.)
+_REMOTE_SETTINGS_RAW = os.getenv("REMOTE_SETTINGS_JSON", "")
+
+# Public globals you can inspect/log
+SET: dict = {}           # The actual settings payload (dict of sections)
+SET_REV: int = 0         # Monotonic revision from DynamoDB
+SET_UPDATED_AT: str|None = None
+SET_USER_ID: str|None = os.getenv("BOT_USER_ID") or os.getenv("USER_ID")
+
+# Map old INI-style section names to new JSON keys
+_SECTION_ALIASES = {
+    "Login Credentials": "LoginCredentials",
+    "Discord Webhooks":  "DiscordWebhooks",
+    "Earns Settings":    "EarnsSettings",
+    "Actions Settings":  "ActionsSettings",
+    "Journal Settings":  "JournalSettings",
+}
+
+def _norm_section(name: str) -> str:
+    return _SECTION_ALIASES.get(name, name)
+
+def _load_remote_settings_from_env():
+    """Populate SET/SET_REV/SET_UPDATED_AT from REMOTE_SETTINGS_JSON."""
+    global SET, SET_REV, SET_UPDATED_AT
+    if not _REMOTE_SETTINGS_RAW:
+        SET, SET_REV, SET_UPDATED_AT = {}, 0, None
+        print("[cfg] REMOTE_SETTINGS_JSON missing; using empty settings.")
+        return
+    try:
+        data = json.loads(_REMOTE_SETTINGS_RAW)
+        if isinstance(data, dict) and "Settings" in data:
+            SET = data.get("Settings") or {}
+            SET_REV = int(data.get("Rev") or 0)
+            SET_UPDATED_AT = data.get("UpdatedAt")
+        else:
+            # allow passing just the Settings dict
+            SET = data if isinstance(data, dict) else {}
+            SET_REV = 0
+            SET_UPDATED_AT = None
+        if not isinstance(SET, dict):
+            SET = {}
+        print(f"[cfg] Loaded settings: sections={list(SET.keys())} rev={SET_REV}")
+    except Exception as e:
+        print(f"[cfg] Failed to parse REMOTE_SETTINGS_JSON: {e}")
+        SET, SET_REV, SET_UPDATED_AT = {}, 0, None
+
+_load_remote_settings_from_env()
+
+# --- Nested lookups (e.g., Judge -> Fines -> <crime>) ---
+
+def cfg_subdict(section: str, field: str) -> dict:
+    """Return a dict from a nested field (case-insensitive)."""
+    s = _section_dict(section) or {}
+    if isinstance(s.get(field), dict):
+        return s[field]
+    # case-insensitive fallback
+    for k, v in s.items():
+        if isinstance(k, str) and k.lower() == field.lower() and isinstance(v, dict):
+            return v
+    return {}
+
+def cfg_int_nested(section: str, nested_field: str, key: str, default: int = 0) -> int:
+    """
+    Try int at section[key]; if missing, try section[nested_field][key] (both case-insensitive).
+    """
+    # 1) direct (top-level in section)
+    v = cfg_int(section, key, None)  # returns None if missing
+    if v is not None:
+        return v
+
+    # 2) nested dict
+    sub = cfg_subdict(section, nested_field)
+    # exact key
+    if key in sub:
+        try:
+            return int(str(sub[key]).replace(",", "").strip())
+        except Exception:
+            return default
+    # case-insensitive match
+    for k, val in sub.items():
+        if isinstance(k, str) and k.lower() == key.lower():
+            try:
+                return int(str(val).replace(",", "").strip())
+            except Exception:
+                return default
+    return default
+
+def _section_dict(section: str) -> dict|None:
+    """Return the section dict if present, trying alias names too."""
+    s = SET.get(section)
+    if isinstance(s, dict):
+        return s
+    s = SET.get(_norm_section(section))
+    return s if isinstance(s, dict) else None
+
+# ---------------- value accessors ----------------
+
+def cfg_get(section: str, key: str, default=None):
+    s = _section_dict(section)
+    if not s:
+        return default
+    # exact key first
+    if key in s:
+        v = s[key]
+    else:
+        # case-insensitive fallback
+        v = next((s[k] for k in s.keys() if isinstance(k, str) and k.lower()==key.lower()), default)
+    # Normalize empty string to default (optional; keeps old INI semantics)
+    if v == "" or v is None:
+        return default
+    return v
+
+def cfg_bool(section: str, key: str, default: bool=False) -> bool:
+    v = cfg_get(section, key, None)
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    s = str(v).strip().lower()
+    if s in {"1","true","t","yes","y","on"}:  return True
+    if s in {"0","false","f","no","n","off"}: return False
+    return default
+
+def cfg_int(section: str, key: str, default: int=0) -> int:
+    v = cfg_get(section, key, None)
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v)
+    if v is None:
+        return default
+    try:
+        return int(str(v).replace(",", "").strip())
+    except Exception:
+        return default
+
+def cfg_float(section: str, key: str, default: float=0.0) -> float:
+    v = cfg_get(section, key, None)
+    if isinstance(v, (int, float)):
+        return float(v)
+    if v is None:
+        return default
+    try:
+        return float(str(v).replace(",", "").strip())
+    except Exception:
+        return default
+
+def cfg_list(section: str, key: str) -> list:
+    """Return a list; supports JSON arrays or CSV strings."""
+    v = cfg_get(section, key, None)
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [x for x in v if x not in ("", None)]
+    s = str(v).strip()
+    # JSON array support
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            arr = json.loads(s)
+            return [x for x in arr if x not in ("", None)] if isinstance(arr, list) else [s]
+        except Exception:
+            pass
+    # CSV fallback
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+# -------- OPTIONAL: SectionProxy if some code still uses INI-like access -----
+class SectionProxy:
+    def __init__(self, section: str):
+        self._section = section
+        self._data = _section_dict(section) or {}
+    def get(self, k: str, fallback=None):
+        return cfg_get(self._section, k, fallback)
+    def getboolean(self, k: str, fallback: bool=False) -> bool:
+        return cfg_bool(self._section, k, fallback)
+    def getint(self, k: str, fallback: int=0) -> int:
+        return cfg_int(self._section, k, fallback)
+    def getlist(self, k: str) -> list:
+        return cfg_list(self._section, k)
+    def __contains__(self, k: str) -> bool:
+        return k in self._data
+
+def cfg_section(section: str) -> SectionProxy|None:
+    return SectionProxy(section) if _section_dict(section) else None
+
 # --- Load Settings from Settings.ini ---
 config = configparser.ConfigParser()
 try:
@@ -23,7 +207,7 @@ except Exception as e:
     exit()
 
 # --- Connect to Chrome Window ---
-chrome_path = config.get('Auth', 'ChromePath', fallback=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+chrome_path = cfg_get('Auth', 'ChromePath') or r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 user_data_dir = r"C:\Temp\MMBotProfile"
 debug_url = "http://127.0.0.1:9222/json/version"
 
@@ -295,6 +479,9 @@ PROMO_MAP = {
     "sergeant": "two",
     "senior sergeant": "two",
     "detective": "one",
+
+    # Crossroads - always pick career
+    "Career Crossroad": "one"
 }
 
 # Cities / travel canonicalization (left = inputs we accept; right = canonical name used by MM URLs/UI)

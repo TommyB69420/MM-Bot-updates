@@ -1,4 +1,3 @@
-import configparser
 import datetime
 import random
 import time
@@ -6,7 +5,7 @@ from selenium.webdriver.common.by import By
 import global_vars
 import os, json, re
 from selenium.webdriver.common.keys import Keys
-
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 from aws_911 import bulk_upsert_911, get_911_item_by_time_victim
 from comms_journals import send_discord_notification
 from database_functions import _set_last_timestamp, _read_json_file, _write_json_file
@@ -24,17 +23,20 @@ def police_911():
     """
     Automates copying the 911 list and posting it in the designated Interpol thread.
     """
+    import re
+    import datetime, time, random
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+
     print("\n--- Starting Police 911 Posting ---")
 
-    cfg = configparser.ConfigParser()
-    cfg.read('settings.ini')
-
-    thread_title = cfg.get('Police', '911Thread', fallback='').strip()
+    # Read from Dynamo-backed settings
+    thread_title = (cfg_get('Police', '911Thread') or '').strip()
     if not thread_title:
-        print("FAILED: No 911 thread title defined in settings.ini.")
+        print("FAILED: No 911 thread title defined in settings.")
         return schedule_next_911_check()
 
-        # Ensure we're on the city page to access the Police menu
+    # Ensure we're on the city page to access the Police menu
     if not _find_and_click(By.XPATH, "//span[@class='city']"):
         print("FAILED: Could not navigate to city page before Police menu.")
         return schedule_next_911_check()
@@ -43,7 +45,8 @@ def police_911():
     if not _navigate_to_page_via_menu(
         "//a[normalize-space()='']//span[@class='police']",
         "//a[normalize-space()='Emergency call register']",
-        "Emergency Call Register"):
+        "Emergency Call Register"
+    ):
         return schedule_next_911_check()
 
     # Copy the 911 list
@@ -60,22 +63,22 @@ def police_911():
     for row in rows[1:]:
         cols = row.find_elements(By.TAG_NAME, "td")
         if len(cols) >= 4:
-            time = cols[0].text.strip()
+            t = cols[0].text.strip()
             crime = cols[1].text.strip()
             victim = cols[2].text.strip()
             suspect = cols[3].text.strip()
 
-            # Skip “escaped” suspects entirely and dont upload to DDB
+            # Skip “escaped” suspects entirely and don't upload to DDB
             if re.search(r"\bescaped\b", suspect, flags=re.IGNORECASE):
-                print(f"Skipping 911 row with escaped suspect: {time} {crime} {victim} {suspect}")
+                print(f"Skipping 911 row with escaped suspect: {t} {crime} {victim} {suspect}")
                 continue
 
-            table_data.append(f"{time} {crime} {victim} {suspect}")
-            parsed_rows.append({"time": time, "crime": crime, "victim": victim, "suspect": suspect})
+            table_data.append(f"{t} {crime} {victim} {suspect}")
+            parsed_rows.append({"time": t, "crime": crime, "victim": victim, "suspect": suspect})
 
             # If whack appears, send to Discord
             if "whack" in crime.lower():
-                send_discord_notification(f"911 Reported: {time} {crime} {victim} {suspect}")
+                send_discord_notification(f"911 Reported: {t} {crime} {victim} {suspect}")
 
     if not table_data:
         print("FAILED: 911 had no valid entries.")
@@ -92,7 +95,6 @@ def police_911():
 
     # Open correct thread
     print(f"Searching Interpol for '{thread_title}'...")
-    # Grab all rows from the Interpol thread list
     thread_rows = _find_elements(By.XPATH, "//div[@id='thread_list']//tr[@class='thread']")
     if not thread_rows:
         print("FAILED: No thread rows found in Interpol list.")
@@ -114,7 +116,10 @@ def police_911():
 
     if not found:
         # Fallback — direct lookup anywhere in the list by exact text
-        direct = _find_element(By.XPATH, f"//div[@id='thread_list']//td[contains(@class,'topic')]/a[normalize-space()='{thread_title}']",)
+        direct = _find_element(
+            By.XPATH,
+            f"//div[@id='thread_list']//td[contains(@class,'topic')]/a[normalize-space()='{thread_title}']"
+        )
         if direct:
             print(f"Opening thread (fallback): {thread_title}")
             direct.click()
@@ -151,7 +156,7 @@ def police_911():
     print("Appending online list to text box...")
     textarea_element = _find_element(By.XPATH, "//textarea[@id='body']")
     if textarea_element:
-        existing_text = textarea_element.get_attribute("value")
+        existing_text = textarea_element.get_attribute("value") or ""
         textarea_element.clear()
         textarea_element.send_keys(existing_text + "\n\n")  # Make sure there's spacing
         # Online list should now be in clipboard — paste it
@@ -783,21 +788,30 @@ def solve_case(character_name):
             _return_case()
             return True
 
-    # Parse cues AFTER evidence work
-    cues = _parse_case_for_signals()
-    if not cues:
-        print("Could not parse the case – returning for safety.")
-        _return_case()
-        return False
-    print("Finished checking case for evidence.")
+        # Parse cues AFTER evidence work
+        cues = _parse_case_for_signals() or {}
+        if not cues:
+            print("Could not parse the case – returning for safety.")
+            _return_case()
+            return False
+
+        print("Finished checking case for evidence.")
+
+    # Bury all cases if you are the victim
+    cues = _parse_case_for_signals() or {}
+    victim = (cues.get("victim") or "").strip()
+    if character_name and victim and victim.lower() == character_name.strip().lower():
+        print("Our character is the VICTIM — burying case to avoid processing our own case.")
+        _bury_case()
+        return True
 
     # If fingerprints list multiple suspects (comma-separated), bury the case.
     fp_txt = (cues.get("fingerprint") or "").strip()
+
     if fp_txt and "," in fp_txt:
         print(f"Fingerprint returned multiple suspects ({fp_txt}) — BURY.")
         _bury_case()
         return True
-
 
     suspect = cues.get("suspect")
     if suspect:
@@ -852,10 +866,8 @@ def solve_case(character_name):
                 print("Case closed successfully (via 911 DDB).")
                 return True
 
-            # 911 gave nothing - Forensics flow if enabled
-            cfg = configparser.ConfigParser()
-            cfg.read('settings.ini')
-            if cfg.getboolean('Police', 'DoForensics', fallback=False):
+            # 911 gave nothing - Forensics flow if enabled (remote settings)
+            if cfg_bool('Police', 'DoForensics', False):
                 # Use timers fetched in Main
                 timers = getattr(global_vars, 'jail_timers', {}) or {}
                 action_remaining = float(timers.get('action_time_remaining', float('inf')))
@@ -936,7 +948,7 @@ def solve_case(character_name):
                     _bury_case()
                     return True
 
-                print("Case closed successfully (via 911.")
+                print("Case closed successfully (via 911).")
                 return True
 
             print("911 gave nothing. BURY.")
@@ -962,7 +974,6 @@ def solve_case(character_name):
 
             if torch_mode and not alive_matches and dead_matches:
                 print("Torch: No alive gangsters found; considering dead gangsters from Obituary.")
-
 
             # Prefer alive matches first
             if len(alive_matches) == 1:

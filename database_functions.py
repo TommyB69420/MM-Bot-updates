@@ -324,40 +324,38 @@ def set_player_data(player_id: str, cooldown_type: str | None = None, cooldown_e
 
 def get_crime_targets_from_ddb(my_home_city: str | None, cooldown_key: str):
     """
-    Returns (player_name, home_city) pairs from DynamoDB for crime selection.
+    Returns (player_name, info_dict) pairs from DynamoDB for crime selection.
+    info_dict contains at least {"HomeCity": str, "Apartment": str or None}.
     - If cooldown_key == MAJOR: only return players in my_home_city
     - If cooldown_key == MINOR: return everyone (city-agnostic)
-    This replaces the old JSON file scan.
     """
     table = get_players_table()
     pk = DDB_PLAYER_PK  # usually "PlayerName"
 
-    # Only need to read these fields from each row
-    projection = f"{pk}, HomeCity"
-
-    from boto3.dynamodb.conditions import Attr
+    # Read both HomeCity and Apartment
+    projection = f"{pk}, HomeCity, Apartment"
 
     # If we’re doing a major crime, filter to same-city players
-    if cooldown_key == MAJOR_CRIME_COOLDOWN_KEY and my_home_city:
-        filter_expr = Attr("HomeCity").eq(my_home_city)
-    else:
-        filter_expr = None
+    filter_expr = Attr("HomeCity").eq(my_home_city) if (
+        cooldown_key == MAJOR_CRIME_COOLDOWN_KEY and my_home_city
+    ) else None
 
-    # Build the scan query
     scan_kwargs = {"ProjectionExpression": projection}
     if filter_expr:
         scan_kwargs["FilterExpression"] = filter_expr
 
-    # DynamoDB scan may paginate, so loop until done
     last_key = None
     while True:
         if last_key:
             scan_kwargs["ExclusiveStartKey"] = last_key
         resp = table.scan(**scan_kwargs)
 
-        # Yield back each row’s (player_name, home_city)
+        # Yield back each row’s (player_name, {"HomeCity": ..., "Apartment": ...})
         for item in resp.get("Items", []):
-            yield item.get(pk), item.get("HomeCity")
+            yield item.get(pk), {
+                "HomeCity": item.get("HomeCity") or "",
+                "Apartment": item.get("Apartment") or "",
+            }
 
         last_key = resp.get("LastEvaluatedKey")
         if not last_key:

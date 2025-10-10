@@ -2,6 +2,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from boto3.dynamodb.conditions import Key
 from typing import List, Dict, Optional
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 # Configure creds/region (use env vars / IAM roles in prod)
 DDB = boto3.resource(

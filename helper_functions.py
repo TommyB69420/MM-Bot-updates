@@ -7,6 +7,7 @@ from selenium.webdriver.support.select import Select
 import global_vars
 from database_functions import _write_json_file, _read_json_file
 from global_vars import wait, EXPLICIT_WAIT_SECONDS, ACTION_PAUSE_SECONDS, driver
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 # --- Helper Functions for WebDriver Interactions ---
 def _find_element(by_type, value, timeout=EXPLICIT_WAIT_SECONDS, suppress_logging=False):

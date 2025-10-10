@@ -14,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from aws_players import upsert_player_apartment
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 _PROCESSED_RO_KEYS = set()
 
@@ -94,8 +95,8 @@ def send_discord_notification(message):
     login_monitor_webhook = "https://discord.com/api/webhooks/1410014694181310546/taL2uorEoSTUkZ3GncGXwppxhowdhzoxvQL0p63srLYjEp030SpOMXij_XPei-mmtgju"
 
     try:
-        webhook_url = global_vars.config['Discord Webhooks'].get('Messages')
-        discord_id = global_vars.config['Discord Webhooks'].get('DiscordID')
+        webhook_url = cfg_get('DiscordWebhooks', 'Messages')
+        discord_id  = cfg_get('DiscordWebhooks', 'DiscordID')
 
         if not webhook_url:
             print("Discord webhook URL not found. Skipping notification.")
@@ -113,8 +114,16 @@ def send_discord_notification(message):
                 print(f"Failed to send login monitor Discord notification: {e}")
             return  # skip sending to normal Messages webhook
 
-        # Otherwise, send to normal Messages webhook
-        full_message = f"{discord_id} {message}" if discord_id else message
+        # Ensure discord_id is always treated as a string
+        discord_id_str = str(discord_id).strip() if discord_id is not None else ""
+
+        if discord_id_str.isdigit():
+            discord_mention = f"<@{discord_id_str}>"
+        else:
+            discord_mention = discord_id_str
+
+        full_message = f"{discord_mention} {message}".strip()
+
         data = {"content": full_message}
         headers = {"Content-Type": "application/json"}
         response = requests.post(webhook_url, data=json.dumps(data), headers=headers)
@@ -321,30 +330,41 @@ def _process_requests_offers_entries():
     """
     Processes entries on the Requests/Offers page and (optionally) sends them to Discord
     if they match a configured allow-list of phrases.
+    Returns True ONLY if we took an action (accepted/declined/sent), else False.
     """
+    import time
+    from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException
+    from selenium.webdriver.common.by import By
+
     print("\n--- Processing Requests/Offers Entries ---")
     requests_offers_table_xpath = "/html/body/div[4]/div[4]/div[1]/div[2]/form[2]/table"
     requests_offers_table_element = _find_element(By.XPATH, requests_offers_table_xpath)
-    processed_keys = set()
 
-    # Load allow-list from settings.ini
-    ro_send_content_raw = ''
-    try:
-        ro_send_content_raw = global_vars.config['Journal Settings'].get('RequestsOffersSendToDiscord', fallback='').lower()
-    except KeyError:
-        print("WARNING: Missing [Journal Settings]/RequestsOffersSendToDiscord. No Requests/Offers will be sent to Discord.")
+    # Cross-cycle dedupe (5 min TTL) so the same NEW row doesn't retrigger every cycle
+    now = time.time()
+    SEEN_TTL = 5 * 60
+    if not hasattr(global_vars, "RO_SEEN_KEYS"):
+        global_vars.RO_SEEN_KEYS = {}
+    else:
+        for k, ts in list(global_vars.RO_SEEN_KEYS.items()):
+            if now - ts > SEEN_TTL:
+                del global_vars.RO_SEEN_KEYS[k]
 
-    ro_send_list = {item.strip() for item in ro_send_content_raw.split(',') if item.strip()}
+    # Allow-list phrases (case-insensitive); supports both legacy and new section names
+    phrases = (
+        cfg_list('JournalSettings', 'RequestsOffersSendToDiscord')
+        or cfg_list('Journal Settings', 'RequestsOffersSendToDiscord')
+    )
+    ro_send_list = {p.strip().lower() for p in phrases if isinstance(p, str) and p.strip()}
 
     if not requests_offers_table_element:
         print("No Requests/Offers table found.")
         return False
 
-    processed_any_request = False
-
+    did_any_action = False
     i = 0
+
     while True:
-        # Re-locate table and rows on every pass (prevents stales)
         table = _find_element(By.XPATH, requests_offers_table_xpath, timeout=2)
         if not table:
             break
@@ -355,19 +375,13 @@ def _process_requests_offers_entries():
         try:
             row = rows[i]
 
-            # Is this a NEW marker row?
             try:
                 _ = row.find_element(By.XPATH, ".//b[text()='NEW']")
             except StaleElementReferenceException:
-                # DOM changed — retry same index with fresh refs
-                time.sleep(0.2)
-                continue
+                time.sleep(0.2); continue
             except NoSuchElementException:
-                # Not a NEW row, advance
-                i += 1
-                continue
+                i += 1; continue
 
-            # Consume the content row right after the marker, using fresh refs
             if i + 1 >= len(rows):
                 print("Found 'NEW' marker but no subsequent content row. Skipping.")
                 i += 1
@@ -375,18 +389,16 @@ def _process_requests_offers_entries():
 
             content_row = rows[i + 1]
             try:
-                # Touch a child so Selenium revalidates the element
                 _ = content_row.find_element(By.XPATH, ".//strong[@class='title']")
             except StaleElementReferenceException:
-                time.sleep(0.2)
-                continue
+                time.sleep(0.2); continue
 
             title_el = content_row.find_element(By.XPATH, ".//strong[@class='title']")
-            time_el = content_row.find_element(By.XPATH, ".//span[@class='time']")
+            time_el  = content_row.find_element(By.XPATH, ".//span[@class='time']")
             label_el = content_row.find_element(By.TAG_NAME, "label")
 
-            entry_title = title_el.text.strip()
-            entry_time = time_el.text.strip()
+            entry_title = (title_el.text or "").strip()
+            entry_time  = (time_el.text or "").strip()
 
             entry_content = global_vars.driver.execute_script("""
                 var labelElem = arguments[0];
@@ -401,51 +413,54 @@ def _process_requests_offers_entries():
                         else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'br') contentText += '\\n';
                     }
                 }
-                return contentText.trim().replace(/\s\s+/g,' ');
+                return contentText.trim().replace(/\\s\\s+/g,' ');
             """, label_el).strip()
 
-            # Handle offers (these will refresh the DOM)
-            accept_lawyer_rep(entry_content)
-            accept_blind_eye_offer(entry_content)
-            accept_drug_smuggle(entry_content)
-
-            # Only send once per *function call*
+            # Dedupe across cycles
             key = f"{entry_time}|{entry_title}|{entry_content}".strip()
-            if key in processed_keys:
-                # Already sent within this call — skip the two rows (marker + content)
+            last = global_vars.RO_SEEN_KEYS.get(key)
+            if last and (now - last) < SEEN_TTL:
                 i += 2
                 continue
 
             print(f"Processing NEW Request/Offer - Title: '{entry_title}', Time: '{entry_time}'")
 
-            # Only send if a whitelist phrase is present in title or content (case-insensitive)
-            combined_entry_info = f"{entry_title.lower()} {entry_content.lower()}"
-            should_send = any(phrase in combined_entry_info for phrase in ro_send_list)
+            # Actions that actually change game state
+            acted = False
+            try:   acted = bool(accept_lawyer_rep(entry_content)) or acted
+            except Exception: pass
+            try:   acted = bool(accept_blind_eye_offer(entry_content)) or acted
+            except Exception: pass
+            try:   acted = bool(accept_drug_smuggle(entry_content)) or acted
+            except Exception: pass
 
-            if should_send:
-                send_discord_notification(f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}")
+            # Whitelist-based Discord send also counts as an action
+            combined = f"{entry_title.lower()} {entry_content.lower()}"
+            if any(phrase in combined for phrase in ro_send_list):
+                send_discord_notification(
+                    f"New Request/Offer - Title: {entry_title}, Time: {entry_time}, Content: {entry_content}"
+                )
                 print(f"Sent request/offer to Discord (matched whitelist): '{entry_title}'.")
+                acted = True
             else:
                 print(f"Skipped sending to Discord (no whitelist match): '{entry_title}'.")
 
-            processed_keys.add(key)
+            # Remember this item so it doesn't retrigger immediately
+            global_vars.RO_SEEN_KEYS[key] = now
 
-            # IMPORTANT: do NOT restart the scan; just advance past this item
+            # Advance past marker + content
             i += 2
-            processed_any_request = True
+            did_any_action = did_any_action or acted
             continue
 
         except StaleElementReferenceException:
-            # Keep logs tidy; don't dump Selenium's full stack
             print("Row went stale while parsing Requests/Offers; re-fetching and retrying…")
-            time.sleep(0.2)
-            continue
+            time.sleep(0.2); continue
         except Exception as e:
             print(f"ERROR parsing Request/Offer row {i}: {getattr(e, 'msg', e)}. Skipping.")
-            i += 1
-            continue
+            i += 1; continue
 
-    return processed_any_request
+    return did_any_action
 
 def process_unread_journal_entries(player_data):
     """
@@ -461,7 +476,10 @@ def process_unread_journal_entries(player_data):
 
     journal_send_content_raw = ''
     try:
-        journal_send_content_raw = global_vars.config['Journal Settings'].get('JournalSendToDiscord', fallback='').lower()
+        journal_send_content_raw = ', '.join(
+    cfg_list('JournalSettings', 'JournalSendToDiscord')
+    or cfg_list('Journal Settings', 'JournalSendToDiscord')
+).lower()
     except KeyError:
         print("WARNING: Missing [Journal Settings] section in settings.ini. No journal filters will be used.")
 
@@ -656,7 +674,7 @@ def accept_lawyer_rep(entry_content):
     attempts to click the ACCEPT button.
     """
     try:
-        accept_lawyer_rep_enabled = global_vars.config['Misc'].getboolean('AcceptLawyerReps', fallback=False)
+        accept_lawyer_rep_enabled = cfg_bool('Misc', 'AcceptLawyerReps', False)
         if accept_lawyer_rep_enabled and "has offered to represent you for" in entry_content.lower():
             print("Detected Lawyer Representation Offer. Attempting to accept it...")
             if _find_and_click(By.XPATH, "//a[normalize-space()='ACCEPT']", pause=global_vars.ACTION_PAUSE_SECONDS):
@@ -688,7 +706,7 @@ def accept_drug_smuggle(entry_content):
     """
     try:
         if "inside of a dead body" in entry_content.lower():
-            do_smuggle = global_vars.config.getboolean('Funeral', 'DoSmuggle', fallback=True)
+            do_smuggle = cfg_bool('Funeral', 'DoSmuggle', True)
 
             if not do_smuggle:
                 print("Drug smuggle detected but DoSmuggle=False. Declining offer...")
@@ -747,19 +765,19 @@ def drug_offers(initial_player_data: dict):
     """
     Processes a journal drug offer.
     Adds your dirty and clean money together to see if it can buy drugs. If not enough on hand, it will withdraw the balance.
-    Check the cost of offered drugs against the max value in settings.ini. And will delcine if it's too expensive, and will accept if its equal to or lower than max.
-    Buying with clean can be toggled from settings.ini.
+    Checks the cost of offered drugs against the max value in settings. Declines if too expensive; accepts if <= cap.
+    Buying with clean can be toggled from settings.
     Returns True if we clicked ACCEPT or DECLINE (i.e., handled the offer), False otherwise.
     """
-
+    import re, math
     from misc_functions import withdraw_money
-    cfg = global_vars.config
-    drugs_cfg = cfg['Drugs'] if 'Drugs' in cfg else None
-    use_clean = drugs_cfg.getboolean('UseClean', fallback=True) if drugs_cfg else True
+
+    # Read from Dynamo-backed settings
+    use_clean = cfg_bool('Drugs', 'UseClean', True)
 
     # Feature toggle
-    if not drugs_cfg or not drugs_cfg.getboolean('BuyDrugs', fallback=False):
-        print("[DRUGS] BuyDrugs disabled in settings.ini — skipping.")
+    if not cfg_bool('Drugs', 'BuyDrugs', False):
+        print("[DRUGS] BuyDrugs disabled in settings — skipping.")
         _back_to_journal()
         return False
 
@@ -780,14 +798,13 @@ def drug_offers(initial_player_data: dict):
         print("Could not click 'View' to open the offer.")
         return False
 
-    # Parse total price, drug type, units
+    # Parse total price
     price_block = _get_element_text(By.XPATH, "//div[@id='content']//p[3]", timeout=3)
     if not price_block:
         print("Could not read price block.")
         _back_to_journal()
         return False
 
-    # Extract an integer price from the paragraph (handles $ and commas)
     m_price = re.search(r"\$?\s*([0-9][0-9,]*)", price_block.replace(',', ''))
     total_price = int(m_price.group(1)) if m_price else None
     if not total_price:
@@ -795,7 +812,7 @@ def drug_offers(initial_player_data: dict):
         _back_to_journal()
         return False
 
-    # View the drug image to determine what drug was offered. Drug image: //div[@id='content']//img[contains(@src, '/images/drugs/')]
+    # Determine drug type from image
     drug_img_src = None
     try:
         img_el = _find_element(By.XPATH, "//div[@id='content']//img[contains(@src, '/images/drugs/')]", timeout=3)
@@ -803,17 +820,12 @@ def drug_offers(initial_player_data: dict):
             drug_img_src = img_el.get_attribute("src") or ""
     except Exception:
         pass
-
     if not drug_img_src:
         print("Could not locate drug image to determine drug type.")
         _back_to_journal()
         return False
 
-    # Extract the name from the src (e.g., '/images/drugs/marijuana.gif' -> 'marijuana'). Normalize to a title case with a couple of special cases
-    base = drug_img_src.split('/')[-1]
-    base = base.split('.')[0]
-    drug_key = base.strip().lower()
-
+    base = drug_img_src.split('/')[-1].split('.')[0].strip().lower()
     name_map = {
         'marijuana': 'Marijuana',
         'cocaine': 'Cocaine',
@@ -822,22 +834,20 @@ def drug_offers(initial_player_data: dict):
         'acid': 'Acid',
         'speed': 'Speed',
     }
-    drug_name = name_map.get(drug_key, drug_key.title())
+    drug_name = name_map.get(base, base.title())
 
-    # Extract how many units have been offered
+    # Units offered
     units_text = _get_element_text(By.XPATH, "//td[@class='item_content']", timeout=3)
     if not units_text:
         print("Could not read units from //td[@class='item_content'].")
         _back_to_journal()
         return False
 
-    # Extract integer units from that cell
     m_units = re.search(r"([0-9][0-9,]*)", units_text.replace(',', ''))
     try:
         units = int(m_units.group(1)) if m_units else None
     except Exception:
         units = None
-
     if not units or units <= 0:
         print(f"Invalid units parsed from '{units_text}'.")
         _back_to_journal()
@@ -850,16 +860,12 @@ def drug_offers(initial_player_data: dict):
     except Exception:
         pass
 
-    # Check price cap for this drug from settings.ini. If a cap for this drug is missing, treat as not allowed and decline.
-    try:
-        cap = drugs_cfg.getint(drug_name, fallback=-1)
-    except Exception:
-        cap = -1
-
+    # Price cap from settings (Drugs.<DrugName>)
+    cap = cfg_int('Drugs', drug_name, -1)
     if cap <= 0:
-        print(f"No valid cap found in settings.ini for '{drug_name}'. Declining.")
+        print(f"No valid cap found in settings for '{drug_name}'. Declining.")
         try:
-            send_discord_notification(f"Declined {drug_name} offer — no cap set in settings.ini.")
+            send_discord_notification(f"Declined {drug_name} offer — no cap set in settings.")
         except Exception:
             pass
         _find_and_click(By.XPATH, "//a[normalize-space()='DECLINE']", pause=global_vars.ACTION_PAUSE_SECONDS)
@@ -876,7 +882,7 @@ def drug_offers(initial_player_data: dict):
         _back_to_journal()
         return True
 
-    # Check money on hand: Clean + Dirty must cover the total price; if not and UseClean=True, withdraw shortfall into clean
+    # Money on hand: Clean + Dirty must cover total; else if UseClean=True, withdraw shortfall to clean
     clean = int(initial_player_data.get("Clean Money", 0) or 0)
     dirty = int(initial_player_data.get("Dirty Money", 0) or 0)
     combined = clean + dirty
@@ -893,7 +899,6 @@ def drug_offers(initial_player_data: dict):
         _back_to_journal()
         return True
 
-    # Not enough combined; optionally top up clean from bank if enabled
     if not use_clean:
         print("Insufficient combined funds and UseClean=False — declining.")
         try:
@@ -904,7 +909,7 @@ def drug_offers(initial_player_data: dict):
         _back_to_journal()
         return True
 
-    shortfall = max(0, total_price - clean)  # amount to add to clean to meet total price
+    shortfall = max(0, total_price - clean)  # top up clean to at least total price
     if shortfall <= 0:
         print("Clean funds already sufficient — accepting.")
         try:
