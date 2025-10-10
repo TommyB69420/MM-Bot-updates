@@ -1099,6 +1099,26 @@ def fire_casework(initial_player_data):
         except Exception as e:
             print(f"WARNING: Could not click Investigate link: {e}")
 
+    # Fire Safety Inspections
+    print("No investigations found. Checking for Fire Safety Inspections...")
+    if _find_and_click(By.XPATH, "//a[normalize-space()='Fire safety inspections']"):
+        print("Opened Fire Safety Inspections page.")
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+        inspect_links = _find_elements_quiet(By.XPATH, "//a[contains(text(),'Inspect')]")
+        if inspect_links:
+            print("Found Fire Safety Inspection. Commencing inspection...")
+            try:
+                inspect_links[0].click()
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                return True
+            except Exception as e:
+                print(f"WARNING: Could not click inspection link: {e}")
+        else:
+            print("No inspection opportunities found on Fire Safety Inspections page.")
+    else:
+        print("No 'Fire safety inspections' button found.")
+
     print("No active fires or investigations available. Setting fallback cooldown.")
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
     return False
