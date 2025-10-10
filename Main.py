@@ -1,3 +1,28 @@
+# --- Self-updater ---
+import os, sys, shutil, subprocess, runpy
+
+if not os.environ.get("MMBOT_UPDATED"):
+    if shutil.which("git") is None:
+        print("[Updater] Git not found! Please install: https://github.com/git-for-windows/git/releases")
+    else:
+        repo = os.path.dirname(os.path.abspath(__file__))
+        os.chdir(repo)
+        subprocess.run(["git", "init"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "remote", "remove", "origin"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "remote", "add", "origin", "https://github.com/TommyB69420/MM-Bot-updates.git"])
+        subprocess.run(["git", "fetch", "--depth=1", "origin", "main"])
+        subprocess.run(["git", "checkout", "-B", "main"])
+        subprocess.run(["git", "reset", "--hard", "origin/main"])
+
+        # Relaunch so updated code runs immediately
+        os.environ["MMBOT_UPDATED"] = "1"
+        if os.environ.get("PYCHARM_HOSTED") == "1":
+            runpy.run_path(__file__, run_name="__main__")
+            sys.exit(0)
+        else:
+            os.execv(sys.executable, [sys.executable, *sys.argv])
+# --- End self-updater ---
+
 import datetime
 import random
 import time
