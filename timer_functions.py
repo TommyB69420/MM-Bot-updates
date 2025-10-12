@@ -5,7 +5,7 @@ from selenium.webdriver.common.by import By
 from helper_functions import _get_element_text, _get_element_attribute
 from database_functions import _read_text_file, _get_last_timestamp, get_timer_remaining_seconds, TIMER_NAME_FUNERAL_YELLOW
 import global_vars
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+from global_vars import cfg_int
 
 def parse_game_datetime(time_str):
     """

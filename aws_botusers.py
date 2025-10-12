@@ -160,3 +160,46 @@ def get_bankers_by_city(city: str) -> set[str]:
         print(f"[DDB] get_bankers_by_city error: {e}")
 
     return bankers
+
+def get_hospital_staff_online_in_city(city: str) -> set[str]:
+    """
+    Returns a set of PlayerName (lowercase) for bot users whose Occupation is
+    Surgeon or Hospital Director, whose Location == city, and IsOnline == True.
+    """
+    staff = set()
+    if not city:
+        return staff
+
+    try:
+        tbl = get_bot_users_table()
+        city_lc = (city or "").strip().lower()
+
+        # We only need these fields to filter
+        ean = {"#pk": DDB_BOT_USERS_PK, "#occ": "Occupation", "#loc": "Location", "#on": "IsOnline"}
+        proj = "#pk, #occ, #loc, #on"
+        resp = tbl.scan(ProjectionExpression=proj, ExpressionAttributeNames=ean)
+        while True:
+            for item in resp.get("Items", []) or []:
+                name = (item.get(DDB_BOT_USERS_PK) or "").strip()
+                occ  = (item.get("Occupation")      or "").strip().lower()
+                loc  = (item.get("Location")        or "").strip().lower()
+                online = bool(item.get("IsOnline", False))
+
+                if not name or not online:
+                    continue
+
+                if loc == city_lc and (occ == "surgeon" or occ == "hospital director"):
+                    staff.add(name.lower())
+
+            if "LastEvaluatedKey" in resp:
+                resp = tbl.scan(
+                    ProjectionExpression=proj,
+                    ExpressionAttributeNames=ean,
+                    ExclusiveStartKey=resp["LastEvaluatedKey"],
+                )
+            else:
+                break
+    except Exception as e:
+        print(f"[DDB] get_hospital_staff_online_in_city error: {e}")
+
+    return staff

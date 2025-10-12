@@ -29,22 +29,38 @@ import time
 import sys
 from selenium.webdriver.common.by import By
 import global_vars
+from modules.agg_helpers import execute_aggravated_crime_logic
+from modules.auto_promo import take_promotion
+from modules.bionics_shop import check_bionics_shop
+from modules.casino import casino_slots
+from modules.community_service import community_service_foreign, community_services
+from modules.consume_drugs import consume_drugs
+from modules.customs import customs_blind_eyes
+from modules.drugs_store import check_drug_store
+from modules.event import do_events
+from modules.fp_yp_scan import execute_funeral_parlour_scan
+from modules.funeral import mortician_autopsy, execute_smuggle_for_player
+from modules.gangster import manufacture_drugs, laundering
+from modules.gym import gym_training
+from modules.jail import jail_work
+from modules.medical import medical_casework, execute_sex_change_if_staff_online
+from modules.bank import banker_laundering, banker_add_clients
+from modules.engineer import engineering_casework
+from modules.fire import fire_duties, fire_casework
+from modules.law import judge_casework, lawyer_casework
 from aws_botusers import upsert_bot_user_snapshot, mark_stale_bot_users_offline
 from discord_bridge import start_discord_bridge
-from agg_crimes import execute_aggravated_crime_logic, execute_funeral_parlour_scan
-from earn_functions import execute_earns_logic, diligent_worker
-from occupations import judge_casework, lawyer_casework, medical_casework, community_services, laundering, \
-    manufacture_drugs, banker_laundering, banker_add_clients, fire_casework, fire_duties, engineering_casework, \
-    customs_blind_eyes, execute_smuggle_for_player, mortician_autopsy, community_service_foreign
+from modules.earn_functions import execute_earns_logic, diligent_worker
 from helper_functions import _get_element_text, _find_and_send_keys, _find_and_click, is_player_in_jail, blind_eye_queue_count, community_service_queue_count, dequeue_community_service, funeral_smuggle_queue_count
 from database_functions import init_local_db
-from police import police_911, prepare_police_cases, train_forensics
+from modules.study_degrees import study_degrees
+from modules.training import police_training, fire_training, customs_training, combat_training
+from modules.weapon_shop import check_weapon_shop
+from modules.police import police_911, prepare_police_cases, train_forensics
 from timer_functions import get_all_active_game_timers
 from comms_journals import send_discord_notification, get_unread_message_count, read_and_send_new_messages, get_unread_journal_count, process_unread_journal_entries
-from misc_functions import study_degrees, do_events, check_weapon_shop, check_drug_store, jail_work, \
-    clean_money_on_hand_logic, gym_training, check_bionics_shop, police_training, combat_training, fire_training, \
-    customs_training, take_promotion, consume_drugs, casino_slots
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+from modules.money_handling import clean_money_on_hand_logic
+from global_vars import cfg_get, cfg_bool, cfg_int
 
 # --- Remote settings loader (from supervisor env) ---
 import os, json
@@ -56,6 +72,11 @@ def _load_remote_settings():
         return {}
 
 SET = _load_remote_settings()  # nested dict (same shape as your portal JSON)
+
+# --- Sex Change staff lookup throttle (in-memory) ---
+_last_sc_staff_poll_epoch = 0          # last time (epoch seconds) we polled BotUsers for hospital staff
+_SEXCHANGE_POLL_SECS = 300             # poll at most once every 5 minutes
+
 
 # --- Initialize Local Cooldown Database ---
 if not init_local_db():
@@ -1018,6 +1039,13 @@ while True:
 
         if perform_critical_checks(character_name):
             continue
+
+        # Book Sex Change (only proceeds if hospital staff online in our city, and cooldown due)
+        now_epoch = int(time.time())
+        if now_epoch - _last_sc_staff_poll_epoch >= _SEXCHANGE_POLL_SECS:
+            _last_sc_staff_poll_epoch = now_epoch
+            if execute_sex_change_if_staff_online(initial_player_data):
+                action_performed_in_cycle = True
 
     # --- Re-fetch all game timers just before determining sleep duration ---
     with global_vars.DRIVER_LOCK:

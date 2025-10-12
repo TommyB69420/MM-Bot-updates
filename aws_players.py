@@ -1,8 +1,6 @@
-import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from datetime import datetime, timezone
 from global_vars import DDB_PLAYER_PK, get_players_table
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
 
 # --- Configure your AWS creds/region (consider using env vars/instance roles in prod) ---
 PLAYER_TABLE = get_players_table()

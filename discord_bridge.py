@@ -10,7 +10,8 @@ from selenium.webdriver.common.by import By
 import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
 from helper_functions import _find_and_click
-from misc_functions import execute_sendmoney_to_player, execute_travel_to_city
+from modules.auto_travel import execute_travel_to_city
+from modules.money_handling import execute_sendmoney_to_player
 from timer_functions import get_all_active_game_timers
 
 # ---- config helpers (from your remote settings) --------------------------------
@@ -97,7 +98,7 @@ def worker():
             action = job.get("action")
 
             # --- EXCLUSIVE BROWSER SECTION ---
-            with global_vars.DRIVER_LOCK:  # NEW
+            with global_vars.DRIVER_LOCK:
                 if action == "reply_to_sender":
                     ok = reply_to_sender(job["to"], job["text"])
                     print(f"[DiscordBridge] reply_to_sender -> {job['to']} | {'OK' if ok else 'FAILED'}")
@@ -127,8 +128,7 @@ def worker():
                     ok = execute_travel_to_city(
                         job["target_city"],
                         current_city=current_city,
-                        discord_user_id=job.get("discord_user_id"),
-                    )
+                        discord_user_id=job.get("discord_user_id"),)
                     print(f"[DiscordBridge] travel -> {job['target_city']} | {'OK' if ok else 'FAILED'}")
 
                 else:

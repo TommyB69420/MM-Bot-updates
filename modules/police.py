@@ -3,15 +3,14 @@ import random
 import time
 from selenium.webdriver.common.by import By
 import global_vars
-import os, json, re
+import re
 from selenium.webdriver.common.keys import Keys
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+from global_vars import cfg_get, cfg_bool
 from aws_911 import bulk_upsert_911, get_911_item_by_time_victim
 from comms_journals import send_discord_notification
 from database_functions import _set_last_timestamp, _read_json_file, _write_json_file
 from helper_functions import _navigate_to_page_via_menu, _find_and_click, _find_elements, _find_element, _find_and_send_keys, _get_element_text, _select_dropdown_option
 from timer_functions import parse_game_datetime
-
 
 def schedule_next_911_check(min_m: float = 7, max_m: float = 10, ret: bool = False):
     next_check = datetime.datetime.now() + datetime.timedelta(minutes=random.uniform(min_m, max_m))
@@ -23,10 +22,6 @@ def police_911():
     """
     Automates copying the 911 list and posting it in the designated Interpol thread.
     """
-    import re
-    import datetime, time, random
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
 
     print("\n--- Starting Police 911 Posting ---")
 

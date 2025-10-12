@@ -2,7 +2,6 @@ import json
 import sys
 
 import requests
-import math
 import re
 import time
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
@@ -14,7 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from aws_players import upsert_player_apartment
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+from global_vars import cfg_get, cfg_bool, cfg_int, cfg_list
 
 _PROCESSED_RO_KEYS = set()
 
@@ -734,7 +733,7 @@ def check_into_hospital_for_surgery():
     """
     print("Trigger: Attempting to check into hospital for surgery...")
 
-    from misc_functions import withdraw_money # import here to prevent a circular problem
+    from modules.money_handling import withdraw_money # import here to prevent a circular problem
     if not withdraw_money(20000):
         print("FAILED: Could not withdraw money for surgery.")
         return False
@@ -770,7 +769,7 @@ def drug_offers(initial_player_data: dict):
     Returns True if we clicked ACCEPT or DECLINE (i.e., handled the offer), False otherwise.
     """
     import re, math
-    from misc_functions import withdraw_money
+    from modules.money_handling import withdraw_money
 
     # Read from Dynamo-backed settings
     use_clean = cfg_bool('Drugs', 'UseClean', True)

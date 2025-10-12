@@ -1,4 +1,3 @@
-# config_diagnostics.py
 from typing import Dict, Any, Tuple, List
 import global_vars as gv
 

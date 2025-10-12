@@ -318,6 +318,7 @@ COMMUNITY_SERVICE_QUEUE_FILE = os.path.join(COOLDOWN_DATA_DIR, "community_servic
 DRUGS_LAST_CONSUMED_FILE =  os.path.join(COOLDOWN_DATA_DIR, "drugs_last_consumed.txt")
 FUNERAL_SMUGGLE_QUEUE_FILE = os.path.join(COOLDOWN_DATA_DIR, "funeral_smuggle_queue.json")
 CASINO_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "casino_next_check.txt")
+SEX_CHANGE_NEXT_CHECK_FILE = os.path.join(COOLDOWN_DATA_DIR, "sex_change_next_check.txt")
 
 # Define keys for database (aggravated_crime_cooldowns.json) entries
 MINOR_CRIME_COOLDOWN_KEY = 'minor_crime_cooldown'

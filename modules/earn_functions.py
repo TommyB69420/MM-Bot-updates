@@ -2,11 +2,10 @@ import datetime
 import random
 import time
 from selenium.webdriver.common.by import By
-from global_vars import cfg_get, cfg_bool, cfg_int, cfg_float, cfg_list, cfg_int_nested
+from global_vars import cfg_get, cfg_list
 import global_vars
-from global_vars import ACTION_PAUSE_SECONDS, config
+from global_vars import ACTION_PAUSE_SECONDS
 from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _find_and_send_keys
-
 
 def _perform_earn_action(earn_name):
     """Clicks a specific earn option and then the 'Work' button."""
