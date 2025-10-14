@@ -36,7 +36,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
     now = get_current_game_time()
 
     if "try them again later" in result_text or "recently survived an aggravated crime" in result_text:
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=3))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=5))
         return 'cooldown_target', target_player_name, None
 
     if "must be online" in result_text:
@@ -45,7 +45,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
 
     if "The name you typed in doesn't exist" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=1))
         return 'non_existent_target', target_player_name, None
 
     # FAILED TOO MANY RECENTLY
@@ -57,7 +57,7 @@ def _perform_pickpocket_attempt(target_player_name, min_steal, max_steal):
 
     if "The victim must be in the same city as you" in result_text:
         print(f"INFO: Target '{target_player_name}' is not in the same city.")
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=1))
         return 'wrong_city', target_player_name, None
 
     if f"You pickpocketed" in result_text and "for $" in result_text:

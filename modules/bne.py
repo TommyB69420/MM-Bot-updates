@@ -36,14 +36,22 @@ def _get_suitable_bne_target(current_location, character_name, excluded_players,
         if player_id == character_name or (excluded_players and player_id in excluded_players):
             continue
 
+        # --- City check ---
+        player_city = ""
+        if isinstance(target_home_city, dict):
+            player_city = (target_home_city.get("HomeCity") or "").strip()
+        else:
+            player_city = (target_home_city or "").strip()
+
+        if player_city.lower() != current_location.lower():
+            continue
+
         # Apartment filter (if any)
-        if filters:
-            if isinstance(target_home_city, dict):
-                apt = (target_home_city.get("Apartment") or "").strip().lower()
-            else:
-                apt = ""
-            if apt not in filters:
-                continue
+        apt = ""
+        if isinstance(target_home_city, dict):
+            apt = (target_home_city.get("Apartment") or "").strip().lower()
+        if filters and apt not in filters:
+            continue
 
         cooldown_end_time = get_player_cooldown(player_id, global_vars.MINOR_CRIME_COOLDOWN_KEY)
         if cooldown_end_time is None or (game_now - cooldown_end_time).total_seconds() >= 0:
@@ -148,28 +156,28 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
 
     # RECENTLY SURVIVED
     if "try them again later" in result_text.lower():
-        cd = now + datetime.timedelta(minutes=5)
+        cd = now + datetime.timedelta(minutes=1)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
         print(f"[BnE] AGG PRO: {target_player_name}. Retry after {cd.strftime('%H:%M:%S')}.")
         return 'cooldown_target', target_player_name, None
 
     # NO APARTMENT
     if "have an apartment" in result_text.lower():
-        cd = now + datetime.timedelta(hours=24)
+        cd = now + datetime.timedelta(minutes=1)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment="No Apartment")
         print(f"[BnE] NO APARTMENT: {target_player_name}. Cooldown set 24h.")
         return 'no_apartment', target_player_name, None
 
     # WRONG CITY (victim's apartment not in your city)
     if "city as your victim" in result_text.lower():
-        cd = now + datetime.timedelta(hours=24)
+        cd = now + datetime.timedelta(minutes=1)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
         print(f"[BnE] WRONG CITY / MOVED APARTMENT: {target_player_name}. 24h minor cooldown set.")
         return 'wrong_city', target_player_name, None
 
     # NON-EXISTENT TARGET
     if "the name you typed in" in result_text.lower():
-        print(f"[BnE] Target '{target_player_name}' does not exist. Removing from cooldown DB.")
+        print(f"[BnE] Target '{target_player_name}' does not exist. Removing from players DB.")
         remove_player_cooldown(target_player_name)
         return 'non_existent_target', target_player_name, None
 

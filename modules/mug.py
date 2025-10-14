@@ -44,12 +44,12 @@ def _perform_mugging_attempt(target_player_name, min_steal, max_steal):
 
     if "The name you typed in" in result_text:
         print(f"INFO: Target '{target_player_name}' does not exist.")
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=15))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=5))
         return 'non_existent_target', target_player_name, None
 
     if "The victim must be in the same" in result_text:
         print(f"INFO: Target '{target_player_name}' is not in the same city.")
-        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=30))
+        set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, now + datetime.timedelta(minutes=1))
         return 'wrong_city', target_player_name, None
 
     # Failed too many

@@ -464,10 +464,17 @@ def execute_aggravated_crime_logic(player_data):
             current_target_player = _get_suitable_bne_target(
                 current_city, character_name, tried_players_in_cycle, apartment_filters=bne_target_apartments)
 
-            # Fallback to anyone if a filter was set but no target found
+            # If none match, try players marked "No Apartment" to see if they've since purchased one
             if not current_target_player and bne_target_apartments:
-                print(f"No BnE targets with apartments {bne_target_apartments}. Falling back to any apartment.")
-                current_target_player = _get_suitable_bne_target(current_city, character_name, tried_players_in_cycle, apartment_filters=None)
+                print(f"No BnE targets with apartments {bne_target_apartments}. Trying 'No Apartment' fallback…")
+                current_target_player = _get_suitable_bne_target(
+                    current_city, character_name, tried_players_in_cycle, apartment_filters=["no apartment"])
+
+            # If still none, final fallback to any apartment
+            if not current_target_player and bne_target_apartments:
+                print("No 'No Apartment' candidates either. Falling back to any apartment.")
+                current_target_player = _get_suitable_bne_target(
+                    current_city, character_name, tried_players_in_cycle, apartment_filters=None)
 
             if not current_target_player:
                 print("No more suitable BnE targets found in the database for this cycle.")

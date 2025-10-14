@@ -74,11 +74,71 @@ def medical_casework(player_data):
 
     if task_clicked:
         print("SUCCESS: Casework task initiated.")
+        # Handle rare DNA tamper prompt without cluttering main flow
+        try:
+            _handled = dna_tamper()
+            if _handled:
+                print("[Medical] Tamper prompt handled.")
+        except Exception as e:
+            print(f"[Medical] Tamper handler error: {e}")
         return True
 
     print("No casework tasks found. Setting fallback cooldown.")
     global_vars._script_case_cooldown_end_time = datetime.datetime.now() + datetime.timedelta(seconds=random.uniform(31, 32))
     return False
+
+def dna_tamper() -> bool:
+    """
+    Detect and resolve the rare DNA tamper prompt.
+    Returns True if we detected the prompt and submitted 'YesTamper', else False.
+    """
+    try:
+        # small pause to allow page to render
+        time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+
+        driver = getattr(global_vars, "DRIVER", None)
+        if not driver:
+            return False
+
+        cur_url = (driver.current_url or "").lower()
+        page_lc = (driver.page_source or "").lower()
+
+        tamper_detected = ("dna_tamper" in cur_url) or ("wish to tamper" in page_lc)
+        if not tamper_detected:
+            return False
+
+        print("[Medical] DNA tamper prompt detected (via URL/text). Selecting YesTamper and submitting...")
+
+        # Find a dropdown that contains an option 'YesTamper'
+        select_el = _find_element(By.XPATH, "//select[option[@value='YesTamper']]", timeout=3, suppress_logging=True)
+        if not select_el:
+            print("[Medical] Tamper dropdown not found.")
+            return False
+
+        try:
+            from selenium.webdriver.support.ui import Select
+            try:
+                Select(select_el).select_by_value("YesTamper")
+            except Exception:
+                # Fallback to visible text in case value differs
+                try:
+                    Select(select_el).select_by_visible_text("Yes")
+                except Exception:
+                    Select(select_el).select_by_visible_text("yes")
+        except Exception as e:
+            print(f"[Medical] Could not select YesTamper/Yes: {e}")
+
+        # Click submit or any submit input as fallback
+        if _find_and_click(By.XPATH, "//input[@name='B1' or @type='submit']", timeout=3):
+            print("[Medical] DNA tamper choice submitted (YesTamper).")
+            return True
+
+        print("[Medical] Submit button not found or click failed.")
+        return False
+
+    except Exception as e:
+        print(f"[Medical] Unexpected error handling tamper prompt: {e}")
+        return False
 
 def execute_sex_change_if_staff_online(initial_player_data: dict) -> bool:
     """
