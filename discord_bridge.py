@@ -11,6 +11,7 @@ import global_vars
 from comms_journals import reply_to_sender, send_discord_notification
 from helper_functions import _find_and_click
 from modules.auto_travel import execute_travel_to_city
+from modules.event import event_reset_agg_strength
 from modules.money_handling import execute_sendmoney_to_player
 from timer_functions import get_all_active_game_timers
 
@@ -118,6 +119,10 @@ def worker():
                     ok = execute_send_timers_snapshot()
                     print(f"[DiscordBridge] timers snapshot | {'OK' if ok else 'FAILED'}")
 
+                elif action == "eventagg":
+                    ok = event_reset_agg_strength()
+                    print(f"[DiscordBridge] eventagg | {'OK' if ok else 'FAILED'}")
+
                 elif action == "log out":
                     ok = execute_logout()
                     print(f"[DiscordBridge] logout requested | {'OK' if ok else 'FAILED'}")
@@ -195,6 +200,14 @@ async def on_message(message: discord.Message):
         print(f"[DiscordBridge] Queued log out. Queue size: {work_queue.qsize()}")
         await message.add_reaction("👋")
         await message.reply("Logging out and stopping the script...")
+        return
+
+    # !eventagg
+    if text.startswith(f"{CMD_PREFIX}eventagg"):
+        work_queue.put({"action": "eventagg"})
+        print(f"[DiscordBridge] Queued eventagg. Queue size: {work_queue.qsize()}")
+        await message.add_reaction("💀")
+        await message.reply("Queued **eventagg**: reset skull, report collected, then run an aggravated crime (only if a skull was clicked).")
         return
 
     # !smuggle <Player>
@@ -324,6 +337,7 @@ async def on_message(message: discord.Message):
             f"- `{CMD_PREFIX}travel <City>` — Allowed: {allowed}\n"
             f"- `{CMD_PREFIX}timers`\n"
             f"- `{CMD_PREFIX}log out`\n"
+            f"- `{CMD_PREFIX}eventagg` — reset agg strength using skull\n"
             f"- `{CMD_PREFIX}ping`"
         )
         return

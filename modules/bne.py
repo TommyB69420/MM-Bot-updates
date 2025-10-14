@@ -165,14 +165,14 @@ def _perform_bne_attempt(target_player_name, repay_enabled=False):
     if "have an apartment" in result_text.lower():
         cd = now + datetime.timedelta(minutes=1)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd, apartment="No Apartment")
-        print(f"[BnE] NO APARTMENT: {target_player_name}. Cooldown set 24h.")
+        print(f"[BnE] NO APARTMENT: {target_player_name}. Minor Cooldown set.")
         return 'no_apartment', target_player_name, None
 
     # WRONG CITY (victim's apartment not in your city)
     if "city as your victim" in result_text.lower():
         cd = now + datetime.timedelta(minutes=1)
         set_player_data(target_player_name, global_vars.MINOR_CRIME_COOLDOWN_KEY, cd)
-        print(f"[BnE] WRONG CITY / MOVED APARTMENT: {target_player_name}. 24h minor cooldown set.")
+        print(f"[BnE] WRONG CITY / MOVED APARTMENT: {target_player_name}. Minor cooldown set.")
         return 'wrong_city', target_player_name, None
 
     # NON-EXISTENT TARGET
