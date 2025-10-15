@@ -207,7 +207,6 @@ async def on_message(message: discord.Message):
         work_queue.put({"action": "eventagg"})
         print(f"[DiscordBridge] Queued eventagg. Queue size: {work_queue.qsize()}")
         await message.add_reaction("💀")
-        await message.reply("Queued **eventagg**: reset skull, report collected, then run an aggravated crime (only if a skull was clicked).")
         return
 
     # !smuggle <Player>

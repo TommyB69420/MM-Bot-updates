@@ -74,22 +74,43 @@ def event_reset_agg_strength() -> bool:
     # Go to the main page via logo
     _find_and_click(By.XPATH, "//div[@id='logo_hit']")
 
-    # Click event page link
+    # Click the event page link
     if not _find_and_click(By.XPATH, "//a[normalize-space()='help defend your local city']", pause=global_vars.ACTION_PAUSE_SECONDS):
         send_discord_notification("No event is currently active")
         return False
 
-    # Click a skull reset; if none, exit early
-    skull_clicked = _find_and_click(By.XPATH, "//img[contains(@title,'Skull -')]", pause=global_vars.ACTION_PAUSE_SECONDS)
-    if not skull_clicked:
-        send_discord_notification("no skulls remaining")
+    # Click an agg reset item (Skull, Fries, etc.)
+    resetagg_items = ["Skull", "Fries", "Purple Egg", "Gingerbread Man"]  # Add more keywords here as needed
+
+    item_clicked = None
+    for item in resetagg_items:
+        resetaggstr = f"//img[contains(@title, '{item} -')]"
+        if _find_and_click(By.XPATH, resetaggstr, pause=global_vars.ACTION_PAUSE_SECONDS):
+            print(f"Used {item} to reset your agg strength.")
+            item_clicked = item
+            break  # stop after the first one that works
+
+    if not item_clicked:
+        send_discord_notification("No agg strength reset items found.")
         return False
 
-    # Read 'Collected: N' after skull reset and notify
-    collected_text = _get_element_text(By.XPATH, "(//div[@id='eventboss_collecteditems']/div[contains(@onclick,'consumables.asp?action=consume&type=')])[last()]//h3[starts-with(normalize-space(),'Collected:')]", timeout=2) or ""
+    # Read 'Collected: N' for the specific item we just used (bind to item_clicked)
+    time.sleep(0.5)
+    collected_xpath = (
+        f"//div[@id='eventboss_collecteditems']"
+        f"//div[.//img[contains(@title, '{item_clicked} -')]]"
+        f"//h3[starts-with(normalize-space(),'Collected:')]"
+    )
+    collected_text = _get_element_text(By.XPATH, collected_xpath, timeout=3) or ""
     m = re.search(r"Collected:\s*([0-9]+)", collected_text)
     if m:
-        send_discord_notification(f"Skulls remaining: {int(m.group(1))}")
+        remaining = int(m.group(1))
+        send_discord_notification(f"{item_clicked} items remaining: {remaining}")
+
+    elif not _get_element_text(By.XPATH, f"//img[contains(@title, '{item_clicked} -')]", timeout=1):
+        # If the item tile vanished completely, assume 0 remaining
+        send_discord_notification(f"{item_clicked} items remaining: 0")
+        print(f"[eventagg] {item_clicked} tile missing after use -> assuming 0 remaining.")
 
     # Clear the last-action file so the main loop will attempt an aggravated crime
     try:
