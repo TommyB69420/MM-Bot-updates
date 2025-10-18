@@ -10,7 +10,8 @@ from selenium.webdriver.common.by import By
 
 import global_vars
 from database_functions import get_crime_targets_from_ddb, get_player_cooldown, _set_last_timestamp
-from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text_quiet, enqueue_community_services, community_service_queue_count
+from helper_functions import _find_and_click, _find_element, _navigate_to_page_via_menu, _get_element_text_quiet, \
+    enqueue_community_services, community_service_queue_count, _find_and_send_keys
 from timer_functions import get_current_game_time
 
 def player_online_hours():
