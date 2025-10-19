@@ -1,4 +1,6 @@
+import datetime as dt
 import datetime
+import os
 import random
 import time
 
@@ -6,7 +8,10 @@ from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 
 import global_vars
+from database_functions import _read_json_file, _write_json_file
 from helper_functions import _find_and_click, _find_element, _find_elements_quiet, _navigate_to_page_via_menu, _get_element_text, _find_and_send_keys
+from timer_functions import get_current_game_time
+
 
 def lawyer_casework():
     """
@@ -97,6 +102,11 @@ def judge_casework(player_data):
                 print(f"Skipping case due to player in skip list (Suspect: {suspect_name}.")
                 continue
 
+            # Skip players we recently failed on (24h window)
+            if judge_fail_skip_24h(suspect_name):
+                print(f"Skipping case for {suspect_name} (recent incorrect sentence — 24h).")
+                continue
+
             row.find_element(By.XPATH, ".//td[5]/input[@type='radio']").click()
             time.sleep(global_vars.ACTION_PAUSE_SECONDS)
 
@@ -114,6 +124,10 @@ def judge_casework(player_data):
                 continue
 
             if process_judge_case_verdict(crime_committed, player_data['Character Name']):
+                # Let the result DOM render, then record skip if a fail banner exists
+                time.sleep(global_vars.ACTION_PAUSE_SECONDS)
+                judge_fail_skip_24h(suspect_name, update_if_fail=True)
+
                 print(f"Successfully processed a case for {suspect_name}.")
                 processed_any_case = True
                 return True
@@ -199,3 +213,53 @@ def process_judge_case_verdict(crime_committed, character_name):
     if not _find_and_click(By.XPATH, "//input[@name='B1']"):
         return False
     return True
+
+def judge_fail_skip_24h(suspect_name: str, *, update_if_fail: bool = False) -> bool:
+    """
+    24h skip manager for Judge cases (single-function version).
+    - Uses game-time for timestamps (falls back to local now).
+    - JSON path: <COOLDOWN_DATA_DIR>/skip_judge_cases.json
+    - When update_if_fail=False: returns True if suspect is currently in skip window.
+    - When update_if_fail=True: checks for //div[@id='fail']; if present, writes 24h skip and returns True.
+    """
+
+    # Resolve storage location; file is (pre)created by timer init in timer_functions.py
+    path = global_vars.SKIP_JUDGE_CASES_FILE
+
+    # Load and sanitize store
+    store = _read_json_file(path) or {}
+    if not isinstance(store, dict):
+        store = {}
+
+    # Current game time (falls back to local if HUD absent)
+    now = get_current_game_time() or dt.datetime.now()
+    key = (suspect_name or "").strip().lower()
+
+    # Purge expired entries
+    changed = False
+    for k, v in list(store.items()):
+        try:
+            until_str = (v or {}).get("until", "")
+            until_dt = dt.datetime.strptime(until_str, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            until_dt = None
+        if not until_dt or until_dt <= now:
+            del store[k]
+            changed = True
+    if changed:
+        _write_json_file(path, store)
+
+    if not update_if_fail:
+        # Determines if we should skip this player?
+        return key in store
+
+    # Look for a 'fail' banner and record 24h skip if present
+    fail_div = _find_element(By.XPATH, "//div[@id='fail']", timeout=1.0, suppress_logging=True)
+    if fail_div:
+        until = (now + dt.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        store[key] = {"display": suspect_name.strip(), "until": until}
+        _write_json_file(path, store)
+        print(f"[JudgeSkip] FAIL banner detected — '{suspect_name}' skipped until {until}.")
+        return True
+
+    return False

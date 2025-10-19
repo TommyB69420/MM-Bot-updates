@@ -9,7 +9,7 @@ from global_vars import (
     FORENSICS_TRAINING_DONE_FILE, POLICE_TRAINING_DONE_FILE, COMBAT_TRAINING_DONE, CUSTOMS_TRAINING_DONE_FILE,
     FIRE_TRAINING_DONE_FILE, BLIND_EYE_QUEUE_FILE, COMMUNITY_SERVICE_QUEUE_FILE, DRUGS_LAST_CONSUMED_FILE,
     FUNERAL_SMUGGLE_QUEUE_FILE, CASINO_NEXT_CHECK_FILE, get_timers_table, BOT_ID, MINOR_CRIME_COOLDOWN_KEY,
-    MAJOR_CRIME_COOLDOWN_KEY, get_players_table, DDB_PLAYER_PK, SEX_CHANGE_NEXT_CHECK_FILE
+    MAJOR_CRIME_COOLDOWN_KEY, get_players_table, DDB_PLAYER_PK, SEX_CHANGE_NEXT_CHECK_FILE, SKIP_JUDGE_CASES_FILE
 )
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Attr
@@ -164,6 +164,7 @@ def init_local_db():
             DRUGS_LAST_CONSUMED_FILE: lambda f: f.write(""),
             CASINO_NEXT_CHECK_FILE: lambda f: f.write(""),
             SEX_CHANGE_NEXT_CHECK_FILE: lambda f: f.write(""),
+            SKIP_JUDGE_CASES_FILE: lambda f: json.dump({}, f),
         }
 
         for file_path, init_func in files_to_initialize.items():
