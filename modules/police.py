@@ -844,14 +844,20 @@ def solve_case(character_name):
                     return True
 
                 fail_box = _find_element(By.XPATH, "//*[@id='fail']")
-                if fail_box and "is now dead" in fail_box.get_attribute("innerText").lower():
-                    print("Suspect is dead per banner – burying case.")
-                    _bury_case()
-                    return True
-                elif fail_box and "use staff" in fail_box.get_attribute("innerText").lower():
-                    print("Suspect is an admin/staff account – burying case.")
-                    _bury_case()
-                    return True
+                if fail_box:
+                    fail_text = fail_box.get_attribute("innerText").lower()
+                    if "is now dead" in fail_text:
+                        print("Suspect is dead per banner – burying case.")
+                        _bury_case()
+                        return True
+                    elif "use staff" in fail_text:
+                        print("Suspect is an admin/staff account – burying case.")
+                        _bury_case()
+                        return True
+                    elif "frame a case on the victim" in fail_text:
+                        print("Cannot frame case on victim – burying case.")
+                        _bury_case()
+                        return True
 
                 if not _close_case():
                     print("Close failed after 911 suspect; bury as fallback.")
