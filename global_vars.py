@@ -483,7 +483,7 @@ PROMO_MAP = {
     "detective": "one",
 
     # Crossroads - always pick career
-    "Career Crossroad": "one"
+    "career crossroad": "one"
 }
 
 # Cities / travel canonicalization (left = inputs we accept; right = canonical name used by MM URLs/UI)

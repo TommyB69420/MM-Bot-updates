@@ -16,8 +16,9 @@ def map_promo_choice(promo_name: str):
     """
     key = (promo_name or "").lower().strip()
     for keyword, choice in global_vars.PROMO_MAP.items():
-        if keyword in key:
+        if str(keyword).lower() in key:
             return choice
+
     return None
 
 def _accept_promo_on_current_page() -> bool:
