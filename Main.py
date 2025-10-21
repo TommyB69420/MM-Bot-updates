@@ -85,6 +85,9 @@ if not init_local_db():
 # Capture the initial state
 global_vars.initial_game_url = global_vars.driver.current_url
 
+# On process start (or supervisor restart), force a one-time earn reselect (skip quick-earn).
+setattr(global_vars, "force_reselect_earn", True)
+
 # --- Initial Player Data Fetch ---
 def fetch_initial_player_data():
     """Fetches and prints initial player data from the game UI."""
@@ -658,7 +661,7 @@ while True:
         # Auto Promo logic
         if enabled_configs.get ('do_auto_promo_enabled') and promo_check_time_remaining <= 0:
             print(f"Auto Promo timer ({promo_check_time_remaining:.2f}s) is ready. Attempting auto-promotion...")
-            if take_promotion():
+            if take_promotion(initial_player_data):
                 action_performed_in_cycle = True
 
         if perform_critical_checks(character_name):
