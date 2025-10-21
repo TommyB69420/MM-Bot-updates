@@ -1052,6 +1052,18 @@ def solve_case(character_name):
         _bury_case()
         return True
 
+    fail_box = _find_element(By.XPATH, "//*[@id='fail']")
+    if fail_box:
+        fail_text = fail_box.get_attribute("innerText").lower()
+        if "frame a case on the victim" in fail_text:
+            print("Cannot frame case on victim – burying case (post-close).")
+            _bury_case()
+            return True
+        elif "use staff" in fail_text:
+            print("Suspect is an admin/staff account – burying case.")
+            _bury_case()
+            return True
+
     print(f"Case closed successfully on suspect {suspect}.")
     return True
 
