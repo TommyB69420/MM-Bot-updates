@@ -89,7 +89,7 @@ def execute_earns_logic():
     final_earn_to_click = which_earn
     if which_earn in earn_priority:
         for option in earn_priority[which_earn]:
-            if option in earns_table_outer_html:
+            if _find_element(By.XPATH, f"//*[@id='earns_list']//span[normalize-space(text())='{option}']", timeout=1):
                 final_earn_to_click = option
                 break
 
